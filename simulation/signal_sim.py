@@ -35,10 +35,11 @@ def sim(dur):
 
     # Make an alpha signal with fluctuating amplitude
     #a_alpha_amp = normalize(offset_bp_noise(n_samps, 0.25, 1.0))
-    a_alpha_amp = np.ones(n_samps)
-    a_alpha_osc = offset_bp_noise(n_samps, 8, 12)
-    a_alpha_sig = normalize(a_alpha_osc * a_alpha_amp)
-    del a_alpha_amp, a_alpha_osc
+    # a_alpha_amp = np.ones(n_samps)
+    # a_alpha_osc = offset_bp_noise(n_samps, 6, 14)
+    # a_alpha_sig = normalize(a_alpha_osc * a_alpha_amp)
+    # del a_alpha_amp, a_alpha_osc
+    a_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=6, high=14, speed=0.1)
 
     # Make a high-gamma signal that depends on alpha amplitude
     # Following Jiang et al 2015, NeuroImage
@@ -46,12 +47,12 @@ def sim(dur):
     #    along until it is inhibited by an alpha-pulse.
     gamma_freq = (60, 200) # Hz
     a_gamma_scale = 0.5
-    a_gamma_lag = 0.01 # Lag the gamma signal (in s)
-    a = 20
-    c = 0
+    a_gamma_lag = 0.0 # Lag the gamma signal (in s) from the LF trough
+    a = 10
+    c = 0.1
+    invert_excitability = lambda sig: (1 - (1 / (1 + np.exp(-a * (sig - c)))))
     #a_gamma_osc = np.sin(2 * np.pi * gamma_freq * t) + 1 # Single oscillation
     a_gamma_osc = offset_bp_noise(n_samps, *gamma_freq)
-    invert_excitability = lambda sig: (1 - (1 / (1 + np.exp(-a * (sig - c)))))
     a_gamma_sig = invert_excitability(a_alpha_sig) * a_gamma_osc
     a_gamma_sig = np.roll(a_gamma_sig, # Gamma is at a lag from alpha
                           int(a_gamma_lag * FSAMPLE)) 
@@ -73,14 +74,15 @@ def sim(dur):
     # Make an alpha signal with fluctuating amplitude
     # This controls excitability in area b.
     #b_alpha_amp = normalize(offset_bp_noise(n_samps, 0.25, 1.0))
-    b_alpha_amp = np.ones(n_samps)
-    b_alpha_osc = offset_bp_noise(n_samps, 8, 12)
-    b_alpha_sig = normalize(b_alpha_osc * b_alpha_amp)
-    del b_alpha_amp, b_alpha_osc
+    # b_alpha_amp = np.ones(n_samps)
+    # b_alpha_osc = offset_bp_noise(n_samps, 6, 14)
+    # b_alpha_sig = normalize(b_alpha_osc * b_alpha_amp)
+    # del b_alpha_amp, b_alpha_osc
+    b_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=6, high=14, speed=0.1)
 
     # Gamma activity in s_a triggers activity in s_b when are b is in an
     # excitable state. Low alpha leads to excitable state
-    a_b_lag = 0.01 # Lag between activity in s_a and s_b
+    a_b_lag = 0.015 # Lag between activity in s_a and s_b
     b_gamma_scale = 2.0
     b_gamma_inp = np.roll(a_gamma_sig, int(a_b_lag * FSAMPLE)) # Gamma input
     b_gamma_sig = invert_excitability(b_alpha_sig) * b_gamma_inp * b_gamma_scale
@@ -135,6 +137,37 @@ def bp_filter(data, lowcut, highcut, fs, order=2):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = lfilter(b, a, data)
     return y
+
+
+def osc_var_freq(n_samps, fs, low, high, speed):
+    """ An oscillation with variable frequency
+
+    n_samps: Number of samples in the output
+    fs: Sampling rate (Hz)
+    low: Lower frequency for the oscillations
+    high: Upper frequency for the oscillations
+    speed: How quickly the frequency can change
+    """
+
+    f = bounded_walk(n_samps, low, high, speed) # instantaneous freq
+    phi = np.cumsum(2 * np.pi * f / fs) # Change in phase per sample
+    x = np.sin(phi)
+    x = (1 / 2) * (x + 1) # Make it vary from 0 to 1
+    return x
+
+
+def bounded_walk(n_samps, low, high, speed):
+    """ A random walk that is bounded within [low, high], changing at 'speed'
+    """
+    x_steps = np.random.normal(scale=speed, size=n_samps)
+    x = [np.mean([low, high])] # Initialize at the mean value
+    for e in x_steps:
+        next_val = x[-1] + e
+        if (next_val < low) or (next_val > high):
+            next_val = x[-1] - e
+        x.append(next_val)
+    x.pop(0)
+    return np.array(x)
 
 
 ###########################
