@@ -33,12 +33,7 @@ def sim(dur):
     # alpha pulses inhibit gamma activity #
     #######################################
 
-    # Make an alpha signal with fluctuating amplitude
-    #a_alpha_amp = normalize(offset_bp_noise(n_samps, 0.25, 1.0))
-    # a_alpha_amp = np.ones(n_samps)
-    # a_alpha_osc = offset_bp_noise(n_samps, 6, 14)
-    # a_alpha_sig = normalize(a_alpha_osc * a_alpha_amp)
-    # del a_alpha_amp, a_alpha_osc
+    # Make a low-freq signal with fluctuating frequency
     a_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=6, high=14, speed=0.1)
 
     # Make a high-gamma signal that depends on alpha amplitude
@@ -46,16 +41,15 @@ def sim(dur):
     #    This implement a strict inhibitory role of alpha. Gamma just chugs
     #    along until it is inhibited by an alpha-pulse.
     gamma_freq = (60, 200) # Hz
-    a_gamma_scale = 0.5
-    a_gamma_lag = 0.0 # Lag the gamma signal (in s) from the LF trough
-    a = 10
-    c = 0.1
-    invert_excitability = lambda sig: (1 - (1 / (1 + np.exp(-a * (sig - c)))))
-    #a_gamma_osc = np.sin(2 * np.pi * gamma_freq * t) + 1 # Single oscillation
+    a_gamma_scale = 0.5 # How strong is the gamma activity
+    a_lf_gamma_lag = 0.0 # Lag the gamma signal (in s) from the LF trough
+    a = 10 # Sigmoid slope
+    c = 0.1 # Sigmoid "threshold"
+    sigmoid = lambda x,a,c: 1 - (1 / (1 + np.exp(-a * (x - c))))
     a_gamma_osc = offset_bp_noise(n_samps, *gamma_freq)
-    a_gamma_sig = invert_excitability(a_alpha_sig) * a_gamma_osc
+    a_gamma_sig = sigmoid(a_alpha_sig, a, c) * a_gamma_osc
     a_gamma_sig = np.roll(a_gamma_sig, # Gamma is at a lag from alpha
-                          int(a_gamma_lag * FSAMPLE)) 
+                          int(a_lf_gamma_lag * FSAMPLE)) 
     a_gamma_sig = a_gamma_sig * a_gamma_scale
 
     # Add white noise and pink noise
@@ -73,11 +67,6 @@ def sim(dur):
 
     # Make an alpha signal with fluctuating amplitude
     # This controls excitability in area b.
-    #b_alpha_amp = normalize(offset_bp_noise(n_samps, 0.25, 1.0))
-    # b_alpha_amp = np.ones(n_samps)
-    # b_alpha_osc = offset_bp_noise(n_samps, 6, 14)
-    # b_alpha_sig = normalize(b_alpha_osc * b_alpha_amp)
-    # del b_alpha_amp, b_alpha_osc
     b_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=6, high=14, speed=0.1)
 
     # Gamma activity in s_a triggers activity in s_b when are b is in an
@@ -85,7 +74,7 @@ def sim(dur):
     a_b_lag = 0.015 # Lag between activity in s_a and s_b
     b_gamma_scale = 2.0
     b_gamma_inp = np.roll(a_gamma_sig, int(a_b_lag * FSAMPLE)) # Gamma input
-    b_gamma_sig = invert_excitability(b_alpha_sig) * b_gamma_inp * b_gamma_scale
+    b_gamma_sig = sigmoid(b_alpha_sig, a, c) * b_gamma_inp * b_gamma_scale
 
     # Add white noise and pink noise
     white_noise = white_amp * normalize(white(n_samps))
@@ -113,6 +102,7 @@ def plot_signals(t, s_a, s_b):
 
 def normalize(x):
     return x / np.max(x)
+
 
 def bp_noise(n_samps, low, high):
     """ Band-limited noise
