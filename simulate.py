@@ -34,27 +34,29 @@ def sim(dur):
     #######################################
 
     # Make a low-freq signal with fluctuating frequency
-    a_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=6, high=14, speed=0.1)
+    a_alpha_sig = osc_var_freq(n_samps, fs=FSAMPLE, low=9, high=11, speed=0.1)
 
     # Make a high-gamma signal that depends on alpha amplitude
     # Following Jiang et al 2015, NeuroImage
     #    This implement a strict inhibitory role of alpha. Gamma just chugs
     #    along until it is inhibited by an alpha-pulse.
-    gamma_freq = (60, 200) # Hz
-    a_gamma_scale = 0.5 # How strong is the gamma activity
-    a_lf_gamma_lag = 0.0 # Lag the gamma signal (in s) from the LF trough
+    gamma_freq = (70, 100) # Hz
+    a_gamma_scale = 1 # How strong is the gamma activity
+    a_lf_gamma_lag = -0.005 # Lag the gamma signal (in s) from the LF trough
+    ############### 0.015 is a reasonable number
     a = 10 # Sigmoid slope
     c = 0.1 # Sigmoid "threshold"
     sigmoid = lambda x,a,c: 1 - (1 / (1 + np.exp(-a * (x - c))))
-    a_gamma_osc = offset_bp_noise(n_samps, *gamma_freq)
+    # a_gamma_osc = bp_noise(n_samps, *gamma_freq)
+    a_gamma_osc = osc_var_freq(n_samps, FSAMPLE, gamma_freq[0], gamma_freq[1], 0.5) - 0.5
     a_gamma_sig = sigmoid(a_alpha_sig, a, c) * a_gamma_osc
     a_gamma_sig = np.roll(a_gamma_sig, # Gamma is at a lag from alpha
                           int(a_lf_gamma_lag * FSAMPLE)) 
     a_gamma_sig = a_gamma_sig * a_gamma_scale
 
     # Add white noise and pink noise
-    white_amp = 0.001
-    pink_amp = 0.001
+    white_amp = 0.01
+    pink_amp = 0.01
     white_noise = white_amp * normalize(white(n_samps))
     pink_noise = pink_amp * normalize(pink(n_samps))
 
