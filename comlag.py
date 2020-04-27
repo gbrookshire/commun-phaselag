@@ -18,45 +18,6 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 
 """
 
-"""
-# Here are examples of how to do related analyses using pactools
-
-import numpy as np
-import matplotlib.pyplot as plt
-import signal_sim
-
-fs = signal_sim.FSAMPLE
-t, s_a, s_b = signal_sim.sim(100)
-
-# Peak-locking
-from pactools import PeakLocking
-est = PeakLocking(fs=fs, low_fq=10, low_fq_width=4.0, t_plot=1.0)
-est.fit(s_a)
-est.plot()
-plt.show()
-
-# Coherence
-from pactools.utils import Coherence # Computes coh separately for each epoch
-nfft = 2**10
-est = Coherence(block_length=nfft, fs=fs)
-coh = est.fit(np.reshape(s_a, [1, 1, -1]), # (n_signal, n_epoch, n_points)
-              np.reshape(s_b, [1, 1, -1]))
-freq = np.arange(1 + nfft / 2) * fs / nfft
-plt.plot(freq, np.abs(np.squeeze(coh)))
-plt.xlabel('Frequency (Hz)')
-plt.ylabel('Coherence (norm)')
-
-# Jiang method - Directional PSI
-from pactools import Comodulogram
-est = Comodulogram(fs=fs,
-                   low_fq_range=np.linspace(1, 20, 20),
-                   low_fq_width=1.0,
-                   method='jiang',
-                   progress_bar=False)
-est.fit(s_a)
-est.plot() # Is there an off-by-1 error in the x-axis?
-"""
-
 
 def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     """
