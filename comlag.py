@@ -18,6 +18,8 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 
 """
 
+import numpy as np
+
 
 def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     """
@@ -38,15 +40,8 @@ def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     mod_freq : The frequencies of modulation for coherence
     """
 
-    n_cycles = n_cycles * np.ones(len(f_carrier))
-
-    # Set up the wavelets
-    wavelets = [_wavelet(f, n, fs) for f,n in zip(f_carrier, n_cycles)]
-
-    # Compute the power timecourse
-    pwr = [abs(np.convolve(amp_sig, w, 'same')) ** 2 
-                for w in wavelets]
-    pwr = np.array(pwr).T
+    # Compute the power time-course
+    pwr = _wavelet_tfr(amp_sig, f_carrier, n_cycles, fs)
 
     # Split the data into segments of length nfft
     x_split = _buffer(phase_sig, nfft, int(nfft / 2))
@@ -62,11 +57,8 @@ def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     pwr_fft = np.fft.fft(pwr_taper, nfft, axis=0)
     
     # Cross spectra
-    x_fft = np.reshape(x_fft, [1024, 1, 194]) # Reshape to combine w/ power
+    x_fft = np.reshape(x_fft, [1024, 1, -1]) # Reshape to combine w/ power
     xspec = x_fft * np.conj(pwr_fft)
-    # TODO For phase difference, maybe just slot in the phase difference
-    # instead of x_fft? That would look like: 
-    #   np.angle(a_fft * np.conj(b_fft))
 
     # Cross-frequency coupling
     num = np.abs(np.nansum(xspec, axis=-1)) # Combine over segments
@@ -86,6 +78,89 @@ def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     return cfc_data, f_mod
 
 
+def cfc_phasediff(a, b, fs, f_carrier, nfft, n_cycles):
+    """ Compute cross-frequency coupling based on the low-frequency phase
+    difference between signals a and b. Return the CFC between low-freq phase
+    diff and HF activity in each signal.
+
+    Parameters
+    ----------
+    a : Vector of data
+    b : Vector of data
+    f_carrier : Vector of carrier frequencies to look for modulation
+    nfft : size of the FFT window (FIXME -- window for what?)
+    n_cycles : How many cycles to include in the wavelet analysis (vec or int)
+    fs : Sampling rate of the signal
+
+    Returns
+    -------
+    cfc_data : Coherence values #FIXME Update for two signals
+    mod_freq : The frequencies of modulation for coherence
+    """
+
+    def buffered_fft(x):
+        """ Get the FFT of a signal split into segments and then tapered
+        """
+        # Compute power time-course
+        x_pwr = _wavelet_tfr(x, f_carrier, n_cycles, fs)
+        # Split the data into segments of length nfft
+        buf = lambda x: _buffer(x, nfft, int(nfft / 2))
+        x_split = buf(x)
+        x_pwr_split = buf(x_pwr)
+        # Apply hanning taper to each segment
+        taper = np.reshape(np.hanning(nfft), [-1, 1])
+        x_taper = taper * x_split
+        x_pwr_taper = np.reshape(np.hanning(nfft), [-1, 1, 1]) * x_pwr_split
+        # FFT of each segment
+        x_fft = np.fft.fft(x_taper, nfft, axis=0)
+        x_fft = np.reshape(x_fft, [1024, 1, -1]) # Reshape to combine w/ power
+        x_pwr_fft = np.fft.fft(x_pwr_taper, nfft, axis=0)
+        return x_fft, x_pwr_fft
+
+    # Get the FFTs of each segment
+    a_fft, a_pwr_fft = buffered_fft(a)
+    b_fft, b_pwr_fft = buffered_fft(b)
+
+    # Cross-spectrum of a and b
+    xspec_ab = a_fft * np.conj(b_fft)
+    cospectrum = np.real(xspec_ab)
+    quadspectrum = np.imag(xspec_ab)
+    amp_spec = np.sqrt(cospectrum ** 2 + quadspectrum ** 2) # like coherence
+    phase_spec = np.arctan(quadspectrum / cospectrum) # Phase diff per freq
+    # If LF activity is independent in A and B, the phase spect will be pretty random
+
+    # Only keep the meaningful frequencies
+    n_keep_freqs = int(np.floor(nfft / 2))
+
+    # Cross-frequency coupling
+    def cfc_helper(spec1, spec2):
+        xspec = spec1 * np.conj(spec2)
+        num = np.abs(np.nansum(xspec, axis=-1)) # Combine over segments
+        denom_a = np.nansum(np.abs(spec1) ** 2, axis=-1)
+        denom_b = np.nansum(np.abs(spec2) ** 2, axis=-1)
+        denom  = np.sqrt(denom_a * denom_b)
+        cfc_data = num / denom
+        cfc_data = cfc_data[:n_keep_freqs, :]
+        return cfc_data
+
+    cfc_phase_a = cfc_helper(phase_spec, a_pwr_fft)
+    cfc_phase_b = cfc_helper(phase_spec, b_pwr_fft)
+    cfc_diff = cfc_phase_b - cfc_phase_a
+    cfc_ratio = cfc_phase_b / cfc_phase_a
+
+    cfc_ab_a = cfc_helper(xspec_ab, a_pwr_fft)
+    cfc_ab_b = cfc_helper(xspec_ab, b_pwr_fft)
+    cfc_diff = cfc_ab_b - cfc_ab_a
+    cfc_ratio = cfc_ab_b / cfc_ab_a
+
+
+    # Compute the modulation frequencies
+    f_mod = np.arange(nfft - 1) * fs / nfft
+    f_mod = f_mod[:n_keep_freqs]
+     
+    return cfc_data, f_mod
+
+    
 def cfc_within(x, fs, f_carrier, nfft, n_cycles):
     """
     Cross-frequency coupling within one signal
@@ -112,7 +187,7 @@ def _wavelet(freq, n_cycles, fs):
 
     Parameters
     ----------
-    freq : int
+    freq : int|float
         Frequency of the wavelet (in Hz)
     n_cycles : int
         Number of cycles to include in the wavelet
@@ -129,6 +204,36 @@ def _wavelet(freq, n_cycles, fs):
     osc = np.exp(1j * 2 * np.pi * freq * np.arange(n) / fs)
     w = taper * osc
     return w
+
+
+def _wavelet_tfr(x, freqs, n_cycles, fs):
+    """ Compute the time-frequency representation using wavelets.
+
+    Parameters
+    ----------
+    x : Vector of data
+    freqs : sequence of numbers
+        Frequency of the wavelet (in Hz)
+    n_cycles : int
+        Number of cycles to include in the wavelet
+    fs : int|float
+        Sampling rate of the signal
+
+    Returns
+    -------
+    pwr : np.ndarray
+        Power time-courses
+    """
+
+    # Set up the wavelets
+    n_cycles = n_cycles * np.ones(len(freqs))
+    wavelets = [_wavelet(f, n, fs) for f,n in zip(freqs, n_cycles)]
+
+    # Compute the power timecourses
+    pwr = [abs(np.convolve(x, w, 'same')) ** 2 for w in wavelets]
+    pwr = np.array(pwr).T
+
+    return pwr
 
 
 def _buffer(x, n, p):
