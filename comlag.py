@@ -19,6 +19,7 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 """
 
 import numpy as np
+from scipy.signal import butter, filtfilt, hilbert
 
 
 def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
@@ -82,6 +83,8 @@ def cfc_phasediff(a, b, fs, f_carrier, nfft, n_cycles):
     """ Compute cross-frequency coupling based on the low-frequency phase
     difference between signals a and b. Return the CFC between low-freq phase
     diff and HF activity in each signal.
+
+    ****** This doesn't seem to work!
 
     Parameters
     ----------
@@ -268,3 +271,156 @@ def _buffer(x, n, p):
         result[..., i_seg] = x[start_inx:(start_inx + n), ...] #fill in by column
     return result
 
+
+def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
+    """
+    Compute CFC as in Tort et al (2010, J Neurophysiol).
+
+    x_{raw}(t) is filtered at the two freq ranges of interest: f_p (phase)
+    and f_A (amplitude).
+
+    Get phase of x_{f_p}(t) using the Hilbert transform: Phi_{f_p}(t).
+
+    Get amplitude of x_{f_A}(t) using the Hilbert transform: A_{f_A}(t).
+
+    Bin the phases of Phi_{f_p}(t), and get the mean of A_{f_A}(t) for each bin.
+
+    Normalize the mean amps by dividing each bin value by the sum over bins.
+
+    Get phase-amplitude coupling by computing the Kullback-Leibler distance
+    D_{KL} between the mean binned amplitudes and a uniform distribution.
+
+    Modulation Index (MI) := D_{KL}(normed binned amps, uniform dist) / log(n bins)
+
+
+    Parameters
+    ----------
+    s_a : ndarray
+        Signal array with the modualting signal. If 2D, first dim must be time,
+        and 2nd dim is channel.
+    s_b : ndarray
+        Signal array with the amplitude variations. If 2D, first dim must be
+        time, and 2nd dim is channel.
+    fs : int,float
+        Sampling rate
+    f_mod : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the phase of the modulation frequencies.
+    f_car : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the amplitude at the carrier frequencies.
+    n_bins : int
+        Number of phase bins for computing D_{KL}
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
+
+    Returns
+    -------
+    mi : ndarray
+        (Modulation frequecy, Carrier frequency)
+    """
+    #TODO test this with multichannel inputs
+
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+    # Get high frequency amplitude using a wavelet transform
+    s_b_amp = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+
+    mi = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
+    for i_fm,fm in enumerate(f_mod):
+        # Compute LF phase
+        s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
+        s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
+        s_a_phase = np.digitize(s_a_phase, phase_bins) - 1 # Binned
+        for i_fc,fc in enumerate(f_car):
+            # Average HF amplitude per LF phase bin
+            amplitude_dist = np.ones(n_bins)  # default is 1 to avoid log(0)
+            for b in np.unique(s_a_phase):
+                amplitude_dist[b] = np.mean(s_b_amp[s_a_phase == b, i_fc])
+            # Kullback-Leibler divergence of the amp distribution vs uniform
+            amplitude_dist /= np.sum(amplitude_dist)
+            d_kl = np.sum(amplitude_dist * np.log(amplitude_dist * n_bins))
+            mi_mc = d_kl / np.log(n_bins)
+            mi[i_fc, i_fm] = mi_mc
+
+    return mi
+
+
+def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
+    """
+    Compute CFC based on the phase-difference between two signals.
+    Compute CFC as in Tort et al (2010, J Neurophysiol).
+
+    Parameters
+    ----------
+    s_a : ndarray
+        Signal array. If 2D, first dim must be time, and 2nd dim is channel.
+    s_b : ndarray
+        Signal array with the amplitude variations. If 2D, first dim must be
+        time, and 2nd dim is channel.
+    fs : int,float
+        Sampling rate
+    f_mod : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the phase of the modulation frequencies.
+    f_car : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the amplitude at the carrier frequencies.
+    n_bins : int
+        Number of phase bins for computing D_{KL}
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
+
+    Returns
+    -------
+    mi_a : ndarray
+        (Modulation frequecy, Carrier frequency)
+        Phase difference a-b influences HF activity in signal a
+    mi_b : ndarray
+        (Modulation frequecy, Carrier frequency)
+        Phase difference a-b influences HF activity in signal b
+    """
+
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+    # Get high frequency amplitude using a wavelet transform
+    amp = {}
+    amp['a'] = _wavelet_tfr(s_a, f_car, n_cycles, fs)
+    amp['b'] = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    mi = {}
+    mi['a'] = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
+    mi['b'] = mi['a'].copy()
+    for i_fm,fm in enumerate(f_mod):
+        # Compute LF phase difference
+        s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
+        s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
+        s_b_filt = bp_filter(s_b.T, fm[0], fm[1], fs, 2).T
+        s_b_phase = np.angle(hilbert(s_b_filt, axis=0))
+        phase_diff = s_a_phase - s_b_phase
+        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+        for i_fc,fc in enumerate(f_car):
+            for sig in ('a', 'b'):
+                # Average HF amplitude per LF phase bin
+                amplitude_dist = np.ones(n_bins) # default is 1 to avoid log(0)
+                for b in np.unique(phase_diff):
+                    amplitude_dist[b] = np.mean(amp[sig][phase_diff == b, i_fc])
+                # Kullback-Leibler divergence of the amp distribution vs uniform
+                amplitude_dist /= np.sum(amplitude_dist)
+                d_kl = np.sum(amplitude_dist * np.log(amplitude_dist * n_bins))
+                mi_mc = d_kl / np.log(n_bins)
+                mi[sig][i_fc, i_fm] = mi_mc
+
+    return mi
+
+
+def bp_filter(data, lowcut, highcut, fs, order=2):
+    def butter_bandpass(lowcut, highcut, fs, order):
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='band')
+        return b, a
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = filtfilt(b, a, data)
+    return y
