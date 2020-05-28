@@ -19,7 +19,7 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 """
 
 import numpy as np
-from scipy.signal import butter, filtfilt, hilbert
+from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 
 
 def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
@@ -214,7 +214,8 @@ def _wavelet_tfr(x, freqs, n_cycles, fs):
 
     Parameters
     ----------
-    x : Vector of data
+    x : ndarray (time,) or (time, channel) or (time, trial)
+        Data. If multidimensional, time must be the first dimension
     freqs : sequence of numbers
         Frequency of the wavelet (in Hz)
     n_cycles : int
@@ -224,7 +225,7 @@ def _wavelet_tfr(x, freqs, n_cycles, fs):
 
     Returns
     -------
-    pwr : np.ndarray
+    pwr : np.ndarray (time, freq, channel|trial)
         Power time-courses
     """
 
@@ -232,9 +233,17 @@ def _wavelet_tfr(x, freqs, n_cycles, fs):
     n_cycles = n_cycles * np.ones(len(freqs))
     wavelets = [_wavelet(f, n, fs) for f,n in zip(freqs, n_cycles)]
 
-    # Compute the power timecourses
-    pwr = [abs(np.convolve(x, w, 'same')) ** 2 for w in wavelets]
-    pwr = np.array(pwr).T
+    # Compute power timecourses of data with multiple channels
+    if x.ndim == 1:
+        x = np.reshape(x, [-1, 1])
+    pwr = []
+    for w in wavelets:
+        w = np.reshape(w, [-1, 1])
+        cnv = fftconvolve(x, w, mode='same', axes=0)
+        p = abs(cnv) ** 2
+        pwr.append(p)
+    pwr = np.array(pwr)
+    pwr = np.swapaxes(pwr, 0, 1)
 
     return pwr
 
@@ -295,12 +304,12 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
     Parameters
     ----------
-    s_a : ndarray
+    s_a : ndarray (time,) or (time, trial)
         Signal array with the modualting signal. If 2D, first dim must be time,
-        and 2nd dim is channel.
-    s_b : ndarray
+        and 2nd dim is trial.
+    s_b : ndarray (time,) or (time, trial)
         Signal array with the amplitude variations. If 2D, first dim must be
-        time, and 2nd dim is channel.
+        time, and 2nd dim is trial.
     fs : int,float
         Sampling rate
     f_mod : list of lists (n, 2)
@@ -325,6 +334,12 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
     # Get high frequency amplitude using a wavelet transform
     s_b_amp = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    # Append trials over time if data includes multiple trials
+    # s_b_amp shape: (time, carrier freq)
+    if s_b.ndim == 2:
+        s_b_amp = np.concatenate(
+                    [s_b_amp[:,:,k] for k in range(s_b_amp.shape[2])],
+                    axis=0)
 
     mi = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
     for i_fm,fm in enumerate(f_mod):
@@ -332,6 +347,10 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
         s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
         s_a_phase = np.digitize(s_a_phase, phase_bins) - 1 # Binned
+        # Append trials over time if data includes multiple trials
+        if s_a_phase.ndim == 2:
+            s_a_phase = np.ravel(s_a_phase, 'F')
+        # Compute CFC for each carrier freq using KL divergence
         for i_fc,fc in enumerate(f_car):
             # Average HF amplitude per LF phase bin
             amplitude_dist = np.ones(n_bins)  # default is 1 to avoid log(0)
@@ -348,16 +367,15 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
 def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     """
-    Compute CFC based on the phase-difference between two signals.
+    Compute CFC based on the low-frequency phase-difference between two signals.
     Compute CFC as in Tort et al (2010, J Neurophysiol).
 
     Parameters
     ----------
-    s_a : ndarray
-        Signal array. If 2D, first dim must be time, and 2nd dim is channel.
-    s_b : ndarray
-        Signal array with the amplitude variations. If 2D, first dim must be
-        time, and 2nd dim is channel.
+    s_a : ndarray (time,) or (time, trial)
+        Signal array. If 2D, first dim must be time, and 2nd dim is trial.
+    s_b : ndarray (time,) or (time, trial)
+        Signal array. If 2D, first dim must be time, and 2nd dim is trial.
     fs : int,float
         Sampling rate
     f_mod : list of lists (n, 2)
@@ -387,6 +405,14 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     amp = {}
     amp['a'] = _wavelet_tfr(s_a, f_car, n_cycles, fs)
     amp['b'] = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    # Append trials over time if data includes multiple trials
+    # amp.shape: (time, carrier freq)
+    for sig in 'ab':
+        if amp[sig].ndim == 3:
+            amp[sig] = np.concatenate(
+                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            axis=0)
+
     mi = {}
     mi['a'] = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
     mi['b'] = mi['a'].copy()
@@ -396,6 +422,11 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
         s_b_filt = bp_filter(s_b.T, fm[0], fm[1], fs, 2).T
         s_b_phase = np.angle(hilbert(s_b_filt, axis=0))
+        # Append trials over time if data includes multiple trials
+        if s_a_phase.ndim == 2:
+            s_a_phase = np.ravel(s_a_phase , 'F')
+        if s_b_phase.ndim == 2:
+            s_b_phase = np.ravel(s_b_phase , 'F')
         phase_diff = s_a_phase - s_b_phase
         phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
         phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
