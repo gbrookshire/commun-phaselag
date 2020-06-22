@@ -47,6 +47,8 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     s_b : np.ndarray
         Signal at area b
     """
+    alpha_freq = (9, 11) # Hz
+    gamma_freq = (70, 100) 
 
     n_samps = int(dur * fs)
     t = np.arange(n_samps) / fs
@@ -57,13 +59,14 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     #######################################
 
     # Make a low-freq signal with fluctuating frequency
-    a_alpha_sig = osc_var_freq(n_samps, fs=fs, low=9, high=11, speed=0.1)
+    a_alpha_sig = osc_var_freq(n_samps, fs=fs,
+                               low=alpha_freq[0], high=alpha_freq[1],
+                               speed=0.1)
 
     # Make a high-gamma signal that depends on alpha amplitude
     # Following Jiang et al 2015, NeuroImage
     #    This implement a strict inhibitory role of alpha. Gamma just chugs
     #    along until it is inhibited by an alpha-pulse.
-    gamma_freq = (70, 100) # Hz
     a_gamma_scale = 1 # How strong is the gamma activity
     a = 10 # Sigmoid slope
     c = 0.1 # Sigmoid "threshold"
