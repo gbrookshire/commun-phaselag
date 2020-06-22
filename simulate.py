@@ -13,6 +13,7 @@ from scipy.signal import butter, filtfilt
 from acoustics.generator import white, pink
 
 def sim(dur=10, fs=1000, noise_amp=0.1,
+        common_noise_amp=0.1, common_alpha_amp=0.0,
         gamma_lag_a=0.015, gamma_lag_a_to_b=0.015):
     """
     Simulate phase-locked communication across frequency bands.
@@ -25,6 +26,10 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
         Sampling rate (Hz)
     noise_amp : float
         Amplitude of the noise added to the signals
+    common_noise_amp: float
+        Amplitude of the noise that's added to both signals
+    common_alpha_amp: float
+        Amplitude of the alpha signal that's added to both signals
     gamma_lag_a : float
         Duration by which gamma activity is lagged from the LF trough w/in s_a
     gamma_lag_a_to_b : float
@@ -80,6 +85,7 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     # Make an alpha signal with fluctuating amplitude
     # This controls excitability in area b.
     b_alpha_sig = osc_var_freq(n_samps, fs=fs, low=6, high=14, speed=0.1)
+    b_alpha_sig = b_alpha_sig + a_alpha_sig # Add volume conduction from A
 
     # Gamma activity in s_a triggers activity in s_b when are b is in an
     # excitable state. Low alpha leads to excitable state
@@ -92,6 +98,17 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
 
     # Combine LF and HF components
     s_b = b_alpha_sig + b_gamma_sig + noise
+
+    # Add common noise to both signals
+    noise = common_noise_amp * normalize(pink(n_samps))
+    s_a = s_a + noise
+    s_b = s_b + noise
+
+    # Add common LF oscillations to both signals, simulating volume conduction
+    common_alpha_sig = osc_var_freq(n_samps, fs=fs, low=6, high=14, speed=0.1)
+    common_alpha_sig = common_alpha_sig * common_alpha_amp
+    s_a = s_a + common_alpha_sig
+    s_b = s_b + common_alpha_sig
 
     return t, s_a, s_b
 
