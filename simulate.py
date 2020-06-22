@@ -13,6 +13,7 @@ from scipy.signal import butter, filtfilt
 from acoustics.generator import white, pink
 
 def sim(dur=10, fs=1000, noise_amp=0.1,
+        signal_leakage=0.0,
         common_noise_amp=0.1, common_alpha_amp=0.0,
         gamma_lag_a=0.015, gamma_lag_a_to_b=0.015):
     """
@@ -26,6 +27,8 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
         Sampling rate (Hz)
     noise_amp : float
         Amplitude of the noise added to the signals
+    signal_leakage: float (0.0 - 1.0)
+        How much does each signal show up in the other channel?
     common_noise_amp: float
         Amplitude of the noise that's added to both signals
     common_alpha_amp: float
