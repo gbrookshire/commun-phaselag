@@ -91,7 +91,6 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     # Make an alpha signal with fluctuating amplitude
     # This controls excitability in area b.
     b_alpha_sig = osc_var_freq(n_samps, fs=fs, low=6, high=14, speed=0.1)
-    b_alpha_sig = b_alpha_sig + a_alpha_sig # Add volume conduction from A
 
     # Gamma activity in s_a triggers activity in s_b when are b is in an
     # excitable state. Low alpha leads to excitable state
@@ -104,6 +103,13 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
 
     # Combine LF and HF components
     s_b = b_alpha_sig + b_gamma_sig + noise
+
+    #############################
+    # Add noise to both signals #
+    #############################
+
+    # Add each signal to the other, simulating volume conduction
+    s_a, s_b = s_a + (s_b * signal_leakage), (s_a * signal_leakage) + s_b
 
     # Add common noise to both signals
     noise = common_noise_amp * normalize(pink(n_samps))

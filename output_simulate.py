@@ -15,11 +15,13 @@ plt.clf()
 # Test the analysis on simulated data #
 #######################################
 
-dur = 20
+dur = 100
 fs = 1000
-t, s_a, s_b = simulate.sim(dur=dur, fs=fs, noise_amp=0.2)
-
-plt.figure()
+t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
+                           noise_amp=0.1,
+                           signal_leakage=0.5,
+                           common_noise_amp=0.0,
+                           common_alpha_amp=0.0)
 
 plt.subplot(2, 1, 1)
 plt.plot(t, s_a, label='$s_a$')
@@ -67,6 +69,8 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
+
+plt.savefig('../data/plots/sim.pdf')
 
 
 
@@ -172,5 +176,6 @@ def analyze_emg_meg():
     plt.title('Phase-diff to EMG')
 
     plt.tight_layout()
+
 
 
