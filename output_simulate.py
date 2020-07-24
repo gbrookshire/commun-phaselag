@@ -33,7 +33,6 @@ plt.xlim(1, 2)
 plt.xlabel('Time (s)')
 plt.ylabel('Amplitude')
 
-# Compute CFC using the Tort method
 
 # Which frequencies to calculate phase for
 f_mod_centers = np.logspace(np.log10(2), np.log10(30), 20)
@@ -44,6 +43,11 @@ f_mod = np.tile(f_mod_width, [2, 1]).T \
 
 # Which frequencies to calculate power for
 f_car = np.arange(30, 200, 5)
+
+
+#####################################
+# Compute CFC using the Tort method #
+#####################################
 
 # CFC within signal A
 mi_a = comlag.cfc_tort(s_a, s_a, fs, f_mod, f_car)
