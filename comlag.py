@@ -22,18 +22,26 @@ import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 
 
-def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
+def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
     Cross-frequency coupling between two signals.
+    This uses the Fourier-based cross-spectrum method (Jiang et al).
 
     Parameters
     ----------
-    phase_sig : Vector of data to calculate LF phase
-    amp_sig : Vector of data to calculate HF amplitude
-    fs : Sampling rate of the signal
-    f_carrier : Vector of carrier frequencies to look for modulation
-    nfft : size of the FFT window (FIXME -- window for what?)
-    n_cycles : How many cycles to include in the wavelet analysis (vec or int)
+    s_a, s_b : ndarray (time,) or (time, trial)
+        Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
+        Phase is extracted from s_a. Amplitude is extracted from s_b.
+    fs : int,float
+        Sampling rate
+    nfft : int
+        Size of the FFT window 
+    n_overlap : int
+        Number of samples of overlap in the FFT windows
+    f_car : list or ndarray
+        Center frequencies for the power-timecourses.
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
 
     Returns
     -------
@@ -42,29 +50,34 @@ def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     """
 
     # Compute the power time-course
-    pwr = _wavelet_tfr(amp_sig, f_carrier, n_cycles, fs)
+    amp = _wavelet_tfr(s_b, f_car, n_cycles, fs)
 
     # Split the data into segments of length nfft
-    x_split = _buffer(phase_sig, nfft, int(nfft / 2))
-    pwr_split = _buffer(pwr, nfft, int(nfft / 2))
+    x_split = _buffer(s_a, nfft, int(nfft / 2))
+    amp_split = _buffer(amp, nfft, int(nfft / 2))
     
     # Apply hanning taper to each segment
-    taper = np.reshape(np.hanning(nfft), [-1, 1])
-    x_taper = taper * x_split
-    pwr_taper = np.reshape(np.hanning(nfft), [-1, 1, 1]) * pwr_split
+    taper = np.hanning(nfft)
+    x_taper = _match_dims(taper, x_split) * x_split
+    amp_taper = _match_dims(taper, amp_split) * amp_split
 
     # FFT of each segment
     x_fft = np.fft.fft(x_taper, nfft, axis=0)
-    pwr_fft = np.fft.fft(pwr_taper, nfft, axis=0)
-    
+    amp_fft = np.fft.fft(amp_taper, nfft, axis=0)
+
+    # Reshape so we can take the cross-spectrum of phase diff and amp FFT
+    new_shape = list(amp_fft.shape)
+    for inx in range(1, len(new_shape) - 1):
+        new_shape[inx] = 1
+    x_fft = np.reshape(x_fft, new_shape)
+ 
     # Cross spectra
-    x_fft = np.reshape(x_fft, [1024, 1, -1]) # Reshape to combine w/ power
-    xspec = x_fft * np.conj(pwr_fft)
+    xspec = x_fft * np.conj(amp_fft)
 
     # Cross-frequency coupling
     num = np.abs(np.nansum(xspec, axis=-1)) # Combine over segments
     denom_a = np.nansum(np.abs(x_fft) ** 2, axis=-1)
-    denom_b = np.nansum(np.abs(pwr_fft) ** 2, axis=-1)
+    denom_b = np.nansum(np.abs(amp_fft) ** 2, axis=-1)
     denom  = np.sqrt(denom_a * denom_b)
     cfc_data = num / denom
 
