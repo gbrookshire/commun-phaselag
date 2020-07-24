@@ -105,3 +105,57 @@ plt.colorbar()
 
 plt.tight_layout()
 
+
+###########################################
+# Compute CFC using cross-spectrum method #
+###########################################
+
+nfft = 2 ** 10
+xlim = [0, 40]
+mi, f_mod = comlag.cfc_xspect(s_a, s_a, fs, nfft, nfft / 2, f_car)
+plt.subplot(2, 3, 4)
+plt.contourf(f_mod, f_car, mi[:,:,0].T)
+plt.xlabel('Phase freq (Hz)')
+plt.ylabel('Amp freq (Hz)')
+plt.xlim(xlim)
+plt.title('CFC within $s_a$')
+plt.colorbar()
+
+# CFC from LF phase-diff between A and B to HG amp in B
+mi, f_mod = comlag.cfc_phasediff_xspect(s_a, s_b, fs, nfft, nfft / 2, f_car)
+plt.subplot(2, 3, 5)
+plt.contourf(f_mod, f_car, mi['a'][:,:,0].T)
+plt.xlabel('Phase-diff freq (Hz)')
+#plt.ylabel('Amp freq (Hz)')
+plt.xlim(xlim)
+plt.title('CFC: phase-diff to $s_a$')
+plt.colorbar()
+
+plt.subplot(2, 3, 6)
+plt.contourf(f_mod, f_car, mi['b'][:,:,0].T)
+plt.xlabel('Phase-diff freq (Hz)')
+#plt.ylabel('Amp freq (Hz)')
+plt.xlim(xlim)
+plt.title('CFC: phase-diff to $s_b$')
+plt.colorbar()
+
+plt.tight_layout()
+
+
+
+k = 130 # Antiphase segment
+k = 10 # In phase segment
+
+i_f_car = 15
+i_f_mod = 10
+i_chan = 0
+plt.clf()
+plt.plot(x_split['a'][:,k])
+plt.plot(x_split['b'][:,k])
+plt.plot(amp_split['b'][:, i_f_car, i_chan, k])
+np.angle(x_phasediff_fft[i_f_mod, k])
+
+x_phasediff_fft[i_f_mod, k] * np.conj(amp_fft['b'][i_f_mod, i_f_car, i_chan, k])
+x_phasediff_fft[i_f_mod, :, :, k] * np.conj(amp_fft['b'][i_f_mod, i_f_car, i_chan, k])
+xspec['b'][i_f_mod, i_f_car, i_chan, k]
+
