@@ -487,6 +487,174 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     return mi
 
 
+def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
+    """
+    Compute CFC similar to Tort et al (2010, J Neurophysiol), but fitting the
+    gamma amplitudes at each phase value to a sine-wave instead of comparing
+    against a uniform distribution using KL distance.
+
+    Parameters
+    ----------
+    s_a : ndarray (time,) or (time, trial)
+        Signal array with the modualting signal. If 2D, first dim must be time,
+        and 2nd dim is trial.
+    s_b : ndarray (time,) or (time, trial)
+        Signal array with the amplitude variations. Structure like s_a.
+    fs : int,float
+        Sampling rate
+    f_mod : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the phase of the modulation frequencies.
+    f_car : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the amplitude at the carrier frequencies.
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
+
+    Returns
+    -------
+    sin_amp : ndarray
+        Amplitude of sine-wave fits. (Modulation frequecy, Carrier frequency)
+    sin_r : ndarray
+        Pearson correlation of sine-wave fits.
+    """
+    #TODO test this with multichannel inputs
+
+    # Get high frequency amplitude using a wavelet transform
+    s_b_amp = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    # Append trials over time if data includes multiple trials
+    # s_b_amp shape: (time, carrier freq)
+    if s_b.ndim == 2:
+        s_b_amp = np.concatenate(
+                    [s_b_amp[:,:,k] for k in range(s_b_amp.shape[2])],
+                    axis=0)
+
+    sin_amp = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
+    sin_r = sin_amp.copy()
+    for i_fm,fm in enumerate(f_mod):
+        # Compute LF phase
+        s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
+        s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
+        # Append trials over time if data includes multiple trials
+        if s_a_phase.ndim == 2:
+            s_a_phase = np.ravel(s_a_phase, 'F')
+        # Compute CFC for each carrier freq by checking for sinusoidal
+        # modulation of HF power along with LF phase
+        for i_fc,fc in enumerate(f_car):
+            p = sine_ols(s_a_phase, np.squeeze(s_b_amp[:, i_fc]))
+            # Save the amplitude of the sine fit
+            sin_amp[i_fc, i_fm] = p[0]
+            # Save the correlation of the sine fit to the real data
+            rval, _ = stats.pearsonr(np.squeeze(s_b_amp[:, i_fc]),
+                                     sine_helper(s_a_phase, *p))
+            sin_r[i_fc, i_fm] = rval
+
+    return sin_amp, sin_r
+
+
+def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
+    """
+    Compute CFC based on the low-frequency phase-difference between two signals.
+
+    Compute CFC similar to Tort et al (2010, J Neurophysiol), but fitting the
+    gamma amplitudes at each phase value to a sine-wave instead of comparing
+    against a uniform distribution using KL distance.
+
+    Parameters
+    ----------
+    s_a, s_b : ndarray (time,) or (time, trial)
+        Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
+    fs : int,float
+        Sampling rate
+    f_mod : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the phase of the modulation frequencies.
+    f_car : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the amplitude at the carrier frequencies.
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
+
+    Returns
+    -------
+    mi : dict of dict of ndarrays
+        (Modulation frequecy, Carrier frequency)
+        Phase difference a-b influences HF activity in signal a and signal b.
+        Dict mi contains two dicts 'amp' and 'r' that contain arrays of the
+        amplitude and goodness-of-fit of the sine-wave fits.
+
+    """
+    #TODO test this with multichannel inputs
+
+    # Get high frequency amplitude using a wavelet transform
+    # Get high frequency amplitude using a wavelet transform
+    amp = {}
+    amp['a'] = _wavelet_tfr(s_a, f_car, n_cycles, fs)
+    amp['b'] = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    # Append trials over time if data includes multiple trials
+    # amp.shape: (time, carrier freq)
+    for sig in 'ab':
+        if amp[sig].ndim == 3:
+            amp[sig] = np.concatenate(
+                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            axis=0)
+
+    # Initialize data structures to hold CFC values
+    init_mat = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
+    mi = {}
+    for sig in ('a', 'b'):
+        mi[sig] = {}
+        for out in ('amp', 'r'):
+            mi[sig][out] = init_mat.copy()
+
+    # Compute the CFC
+    for i_fm,fm in enumerate(f_mod):
+        # Compute LF phase difference
+        s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
+        s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
+        s_b_filt = bp_filter(s_b.T, fm[0], fm[1], fs, 2).T
+        s_b_phase = np.angle(hilbert(s_b_filt, axis=0))
+        # Append trials over time if data includes multiple trials
+        if s_a_phase.ndim == 2:
+            s_a_phase = np.ravel(s_a_phase , 'F')
+        if s_b_phase.ndim == 2:
+            s_b_phase = np.ravel(s_b_phase , 'F')
+        phase_diff = s_a_phase - s_b_phase
+        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+        # Compute CFC for each carrier freq by checking for sinusoidal
+        # modulation of HF power along with LF phase
+        for i_fc,fc in enumerate(f_car):
+            for sig in ('a', 'b'):
+                amp_sig = np.squeeze(amp[sig][:, i_fc])
+                p = sine_ols(phase_diff, amp_sig)
+                # Save the correlation of the sine fit to the real data
+                rval, _ = stats.pearsonr(amp_sig, sine_helper(phase_diff, *p))
+                mi[sig]['amp'][i_fc, i_fm] = p[0]
+                mi[sig]['r'][i_fc, i_fm] = rval
+
+    return mi
+
+
+def sine_helper(x, a, phi, o):
+    """ Output a sine wave at the points in x, given a (amp), phi (phase),
+    and o (offset) of the sine wave.
+    """
+    return o + (a * np.sin(x + phi))
+
+
+def sine_ols(s_phase, s_amp):
+    """ Given vectors of phase and amplitude, fit a sine wave.
+    Return a list of Amplitude, Phase, and Offset.
+    """
+    a = np.stack([np.ones(s_phase.shape),
+                np.sin(s_phase),
+                np.cos(s_phase)])
+    b = np.squeeze(s_amp)
+    x,_,_,_ = np.linalg.lstsq(a.T, b, rcond=None)
+    z = np.complex(*x[1:])
+    # Amp, phase, offset
+    p = [np.abs(z), np.angle(z), x[0]]
+    return p
 def bp_filter(data, lowcut, highcut, fs, order=2):
     def butter_bandpass(lowcut, highcut, fs, order):
         nyq = 0.5 * fs
