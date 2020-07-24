@@ -419,10 +419,8 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
     Parameters
     ----------
-    s_a : ndarray (time,) or (time, trial)
-        Signal array. If 2D, first dim must be time, and 2nd dim is trial.
-    s_b : ndarray (time,) or (time, trial)
-        Signal array. If 2D, first dim must be time, and 2nd dim is trial.
+    s_a, s_b : ndarray (time,) or (time, trial)
+        Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
     fs : int,float
         Sampling rate
     f_mod : list of lists (n, 2)
@@ -438,12 +436,9 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
     Returns
     -------
-    mi_a : ndarray
+    mi : dict of ndarrays
         (Modulation frequecy, Carrier frequency)
-        Phase difference a-b influences HF activity in signal a
-    mi_b : ndarray
-        (Modulation frequecy, Carrier frequency)
-        Phase difference a-b influences HF activity in signal b
+        Phase difference a-b influences HF activity in signal a and signal b
     """
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
