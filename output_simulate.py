@@ -77,4 +77,31 @@ plt.colorbar()
 plt.tight_layout()
 
 plt.savefig('../data/plots/sim.pdf')
+################################################
+# Compute CFC using modified-Tort w/ sine-fits #
+################################################
+
+mi_amp, mi_r = comlag.cfc_sine(s_a, s_a, fs, f_mod, f_car)
+plt.subplot(2, 3, 4)
+plt.contourf(np.mean(f_mod, axis=1), f_car, mi_r)
+plt.xlabel('Phase freq (Hz)')
+plt.ylabel('Amp freq (Hz)')
+plt.title('CFC within $s_a$')
+plt.colorbar()
+
+# CFC from LF phase-diff between A and B to HG amp in B
+mi = comlag.cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car)
+plt.subplot(2, 3, 5)
+plt.contourf(np.mean(f_mod, axis=1), f_car, mi['a']['r'])
+plt.xlabel('Phase-diff freq (Hz)')
+plt.title('CFC: phase-diff to $s_a$')
+plt.colorbar()
+
+plt.subplot(2, 3, 6)
+plt.contourf(np.mean(f_mod, axis=1), f_car, mi['b']['r'])
+plt.xlabel('Phase-diff freq (Hz)')
+plt.title('CFC: phase-diff to $s_b$')
+plt.colorbar()
+
+plt.tight_layout()
 
