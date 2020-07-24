@@ -109,7 +109,7 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     #############################
 
     # Add each signal to the other, simulating volume conduction
-    s_a, s_b = s_a + (s_b * signal_leakage), (s_a * signal_leakage) + s_b
+    s_a, s_b = (s_a + (s_b * signal_leakage)), ((s_a * signal_leakage) + s_b)
 
     # Add common noise to both signals
     noise = common_noise_amp * normalize(pink(n_samps))
