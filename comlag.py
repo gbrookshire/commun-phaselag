@@ -301,7 +301,7 @@ def _buffer(x, n, p):
     Parameters
     ----------
     x : ndarray
-        Signal array. If 2D, first dim must be time, and 2nd dim is channel
+        Signal array. If more than 1D, first dim must be time.
     n : int
         Number of samples in each data segment
     p : int
@@ -315,11 +315,13 @@ def _buffer(x, n, p):
     Adapted from https://stackoverflow.com/a/57491913
     '''
     start_points = range(0, x.shape[0] - n + 1, n - p) # Where each seg starts
-    assert len(x.shape) <= 2, 'Data must be 1- or 2-dimensional'
+    #assert len(x.shape) <= 2, 'Data must be 1- or 2-dimensional'
     if len(x.shape) == 1:
         result_shape = [n, len(start_points)]
     elif len(x.shape) == 2:
         result_shape = [n, x.shape[1], len(start_points)]
+    elif len(x.shape) == 3:
+        result_shape = [n, x.shape[1], x.shape[2], len(start_points)]
     result = np.full(result_shape, np.nan) # initialize data matrix
     for i_seg, start_inx in enumerate(start_points):
         result[..., i_seg] = x[start_inx:(start_inx + n), ...] #fill in by column
