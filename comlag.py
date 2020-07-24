@@ -225,7 +225,8 @@ def cfc_within(x, fs, f_carrier, nfft, n_cycles):
     cfc_data : Coherence values
     mod_freq : The frequencies of modulation for coherence
     """
-    cfc_data, f_mod = cfc_two_signals(x, x, fs, f_carrier, nfft, n_cycles)
+    #FIXME args are out of order
+    cfc_data, f_mod = cfc_two_signals(x, x, fs, f_carrier, nfft, n_cycles) 
     return cfc_data, f_mod
 
 
