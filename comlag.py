@@ -79,89 +79,120 @@ def cfc_two_signals(phase_sig, amp_sig, fs, f_carrier, nfft, n_cycles):
     return cfc_data, f_mod
 
 
-def cfc_phasediff(a, b, fs, f_carrier, nfft, n_cycles):
-    """ Compute cross-frequency coupling based on the low-frequency phase
-    difference between signals a and b. Return the CFC between low-freq phase
-    diff and HF activity in each signal.
+def cfc_phasediff_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
+    """
+    Compute CFC based on the low-frequency phase-difference between two signals.
+    Compute CFC as in Tort et al (2010, J Neurophysiol).
 
-    ****** This doesn't seem to work!
+    ------- This approach doesn't work --------
+    In this method, we use the cross-spectrum to get the phase difference
+    between two signals -- in our case, LF phase difference and phase of HF
+    amplitude. The problem arises because when we take the phase difference, we
+    lose the absolute phase of either signal. So when we try to look at the
+    relationship between LF phase difference and phase of HF amplitude, there's
+    nothing there -- because the absolute phase of both LF signals has been
+    lost. We would probably be able to connect LF phase difference with the
+    overall amplitude of HF power at each segment, but not with the phase of
+    the LF envelope.
 
     Parameters
     ----------
-    a : Vector of data
-    b : Vector of data
-    f_carrier : Vector of carrier frequencies to look for modulation
-    nfft : size of the FFT window (FIXME -- window for what?)
-    n_cycles : How many cycles to include in the wavelet analysis (vec or int)
-    fs : Sampling rate of the signal
+    s_a, s_b : ndarray (time,) or (time, trial)
+        Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
+    fs : int,float
+        Sampling rate
+    nfft : int
+        Size of the FFT window 
+    n_overlap : int
+        Number of samples of overlap in the FFT windows
+    f_car : list or ndarray
+        Center frequencies for the power-timecourses.
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
 
     Returns
     -------
-    cfc_data : Coherence values #FIXME Update for two signals
-    mod_freq : The frequencies of modulation for coherence
+    cfc_data : dict of ndarrays
+        (Modulation frequecy, Carrier frequency)
+        Phase difference a-b influences HF activity in signal a and signal b
     """
 
-    def buffered_fft(x):
-        """ Get the FFT of a signal split into segments and then tapered
-        """
-        # Compute power time-course
-        x_pwr = _wavelet_tfr(x, f_carrier, n_cycles, fs)
+    x = {'a': s_a, 'b': s_b}
+    amp = {}
+    x_split = {}
+    amp_split = {}
+    x_taper = {}
+    amp_taper = {}
+    x_fft = {}
+    amp_fft = {}
+    xspec = {}
+    cfc_data = {}
+
+    for sig in 'ab':
+
+        # Get high frequency amplitude using a wavelet transform
+        amp[sig] = _wavelet_tfr(x[sig], f_car, n_cycles, fs)
+
+        # TODO Check whether this works with multiple channels and trials
         # Split the data into segments of length nfft
-        buf = lambda x: _buffer(x, nfft, int(nfft / 2))
-        x_split = buf(x)
-        x_pwr_split = buf(x_pwr)
+        x_split[sig] = _buffer(x[sig], nfft, int(nfft / 2))
+        amp_split[sig] = _buffer(amp[sig], nfft, int(nfft / 2))
+
         # Apply hanning taper to each segment
-        taper = np.reshape(np.hanning(nfft), [-1, 1])
-        x_taper = taper * x_split
-        x_pwr_taper = np.reshape(np.hanning(nfft), [-1, 1, 1]) * x_pwr_split
+        taper = np.hanning(nfft)
+        x_taper[sig] = _match_dims(taper, x_split[sig]) * x_split[sig]
+        amp_taper[sig] = _match_dims(taper, amp_split[sig]) * amp_split[sig]
+
         # FFT of each segment
-        x_fft = np.fft.fft(x_taper, nfft, axis=0)
-        x_fft = np.reshape(x_fft, [1024, 1, -1]) # Reshape to combine w/ power
-        x_pwr_fft = np.fft.fft(x_pwr_taper, nfft, axis=0)
-        return x_fft, x_pwr_fft
+        x_fft[sig] = np.fft.fft(x_taper[sig], nfft, axis=0)
+        amp_fft[sig] = np.fft.fft(amp_taper[sig], nfft, axis=0)
 
-    # Get the FFTs of each segment
-    a_fft, a_pwr_fft = buffered_fft(a)
-    b_fft, b_pwr_fft = buffered_fft(b)
+    # Use the cross-spectra to get the phase diff b/w the low-frequency signals
+    x_phasediff_fft = x_fft['a'] * np.conj(x_fft['b'])
+    # Normalize the phase difference to unit amplitude
+    x_phasediff_fft = np.exp(1j * np.angle(x_phasediff_fft))
 
-    # Cross-spectrum of a and b
-    xspec_ab = a_fft * np.conj(b_fft)
-    cospectrum = np.real(xspec_ab)
-    quadspectrum = np.imag(xspec_ab)
-    amp_spec = np.sqrt(cospectrum ** 2 + quadspectrum ** 2) # like coherence
-    phase_spec = np.arctan(quadspectrum / cospectrum) # Phase diff per freq
-    # If LF activity is independent in A and B, the phase spect will be pretty random
+    # Reshape so we can take the cross-spectrum of phase diff and amp FFT
+    new_shape = list(amp_fft['a'].shape)
+    for inx in range(1, len(new_shape) - 1):
+        new_shape[inx] = 1
+    x_phasediff_fft = np.reshape(x_phasediff_fft, new_shape)
 
-    # Only keep the meaningful frequencies
-    n_keep_freqs = int(np.floor(nfft / 2))
+    # ##### TESTING
+    # # Make amp_fft follow x_phasediff_fft as a test
+    # freq_car_to_change = 20
+    # freq_mod_to_change = slice(40, 60)
+    # amp_fft['a'][freq_mod_to_change, freq_to_change, :, :] = \
+    #                                 x_phasediff_fft[freq_mod_to_change, 0, :, :]
 
-    # Cross-frequency coupling
-    def cfc_helper(spec1, spec2):
-        xspec = spec1 * np.conj(spec2)
-        num = np.abs(np.nansum(xspec, axis=-1)) # Combine over segments
-        denom_a = np.nansum(np.abs(spec1) ** 2, axis=-1)
-        denom_b = np.nansum(np.abs(spec2) ** 2, axis=-1)
+    for sig in 'ab':
+        # Get the cross-spec b/w the phase-diff signal and the phase of the
+        # amplitude signals
+        xspec[sig] = x_phasediff_fft * np.conj(amp_fft[sig])
+
+        # Cross-frequency coupling
+        num = np.abs(np.nansum(xspec[sig], axis=-1)) # Combine over segments
+        denom_a = np.nansum(np.abs(x_phasediff_fft) ** 2, axis=-1)
+        denom_b = np.nansum(np.abs(amp_fft[sig]) ** 2, axis=-1)
         denom  = np.sqrt(denom_a * denom_b)
-        cfc_data = num / denom
-        cfc_data = cfc_data[:n_keep_freqs, :]
-        return cfc_data
+        cfc_data[sig] = num / denom
 
-    cfc_phase_a = cfc_helper(phase_spec, a_pwr_fft)
-    cfc_phase_b = cfc_helper(phase_spec, b_pwr_fft)
-    cfc_diff = cfc_phase_b - cfc_phase_a
-    cfc_ratio = cfc_phase_b / cfc_phase_a
-
-    cfc_ab_a = cfc_helper(xspec_ab, a_pwr_fft)
-    cfc_ab_b = cfc_helper(xspec_ab, b_pwr_fft)
-    cfc_diff = cfc_ab_b - cfc_ab_a
-    cfc_ratio = cfc_ab_b / cfc_ab_a
-
+        # Only keep the meaningful frequencies
+        n_keep_freqs = int(np.floor(nfft / 2))
+        cfc_data[sig] = cfc_data[sig][:n_keep_freqs, ...] #TODO check with 3D data
 
     # Compute the modulation frequencies
     f_mod = np.arange(nfft - 1) * fs / nfft
     f_mod = f_mod[:n_keep_freqs]
      
     return cfc_data, f_mod
+
+
+def _match_dims(arr1, arr2):
+    """ Reshape arr1 so it has the same #dims as arr1
+    """
+    arr1 = np.reshape(arr1, [-1] + ([1] * (arr2.ndim - 1)))
+    return arr1
 
     
 def cfc_within(x, fs, f_carrier, nfft, n_cycles):
