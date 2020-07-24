@@ -17,9 +17,10 @@ plt.clf()
 
 dur = 100
 fs = 1000
+volume_conduction = 0.0
 t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
                            noise_amp=0.1,
-                           signal_leakage=0.1,
+                           signal_leakage=volume_conduction,
                            gamma_lag_a_to_b=0.050,
                            common_noise_amp=0.0,
                            common_alpha_amp=0.0)
