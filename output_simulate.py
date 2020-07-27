@@ -113,7 +113,7 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-plt.savefig(f'../data/plots/sim_fit_sine.pdf')
+plt.savefig(f'../data/plots/sim_fit_sine.png')
 
 
 ###########################################
@@ -159,5 +159,5 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-plt.savefig(f'../data/plots/sim_xspect.pdf')
+plt.savefig(f'../data/plots/sim_xspect.png')
 
