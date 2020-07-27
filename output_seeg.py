@@ -125,7 +125,7 @@ f_car = np.arange(30, 120, 5)
 # Helper function to allow for switching between CFC functions
 def cfc_func(a, b, method='tort'):
     cfc_kwargs = {'fs': epochs.info['sfreq'],
-                  'fmod': f_mod,
+                  'f_mod': f_mod,
                   'f_car': f_car}
     if method== 'tort':
         mi = comlag.cfc_tort(a, b, **cfc_kwargs)
@@ -230,7 +230,7 @@ plt.tight_layout()
 
 def cfc_phasediff_func(a, b, method='tort'):
     cfc_kwargs = {'fs': epochs.info['sfreq'],
-                  'fmod': f_mod,
+                  'f_mod': f_mod,
                   'f_car': f_car}
     if method== 'tort':
         mi = comlag.cfc_phasediff_tort(a, b, **cfc_kwargs)
