@@ -9,7 +9,6 @@ import simulate
 import comlag
 
 plt.ion()
-plt.clf()
 
 #######################################
 # Test the analysis on simulated data #
@@ -19,20 +18,11 @@ dur = 100
 fs = 1000
 volume_conduction = 0.0
 t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
-                           noise_amp=0.1,
+                           noise_amp=0.5,
                            signal_leakage=volume_conduction,
-                           gamma_lag_a_to_b=0.050,
+                           gamma_lag_a_to_b=0.010,
                            common_noise_amp=0.0,
                            common_alpha_amp=0.0)
-
-plt.subplot(2, 1, 1)
-plt.plot(t, s_a, label='$s_a$')
-plt.plot(t, s_b, label='$s_b$')
-plt.legend(loc='upper right')
-plt.xlim(1, 2)
-plt.xlabel('Time (s)')
-plt.ylabel('Amplitude')
-
 
 # Which frequencies to calculate phase for
 f_mod_centers = np.logspace(np.log10(2), np.log10(30), 20)
@@ -48,6 +38,15 @@ f_car = np.arange(30, 200, 5)
 #####################################
 # Compute CFC using the Tort method #
 #####################################
+
+plt.clf()
+plt.subplot(2, 1, 1)
+plt.plot(t, s_a, label='$s_a$')
+plt.plot(t, s_b, label='$s_b$')
+plt.legend(loc='upper right')
+plt.xlim(1, 2)
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
 
 # CFC within signal A
 mi_a = comlag.cfc_tort(s_a, s_a, fs, f_mod, f_car)
@@ -75,11 +74,21 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
+plt.savefig(f'../data/plots/sim_tort.png')
 
-plt.savefig('../data/plots/sim.pdf')
+
 ################################################
 # Compute CFC using modified-Tort w/ sine-fits #
 ################################################
+
+plt.clf()
+plt.subplot(2, 1, 1)
+plt.plot(t, s_a, label='$s_a$')
+plt.plot(t, s_b, label='$s_b$')
+plt.legend(loc='upper right')
+plt.xlim(1, 2)
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
 
 mi_amp, mi_r = comlag.cfc_sine(s_a, s_a, fs, f_mod, f_car)
 plt.subplot(2, 3, 4)
@@ -104,11 +113,21 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
+plt.savefig(f'../data/plots/sim_fit_sine.pdf')
 
 
 ###########################################
 # Compute CFC using cross-spectrum method #
 ###########################################
+
+plt.clf()
+plt.subplot(2, 1, 1)
+plt.plot(t, s_a, label='$s_a$')
+plt.plot(t, s_b, label='$s_b$')
+plt.legend(loc='upper right')
+plt.xlim(1, 2)
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
 
 nfft = 2 ** 10
 xlim = [0, 40]
@@ -140,22 +159,5 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-
-
-
-k = 130 # Antiphase segment
-k = 10 # In phase segment
-
-i_f_car = 15
-i_f_mod = 10
-i_chan = 0
-plt.clf()
-plt.plot(x_split['a'][:,k])
-plt.plot(x_split['b'][:,k])
-plt.plot(amp_split['b'][:, i_f_car, i_chan, k])
-np.angle(x_phasediff_fft[i_f_mod, k])
-
-x_phasediff_fft[i_f_mod, k] * np.conj(amp_fft['b'][i_f_mod, i_f_car, i_chan, k])
-x_phasediff_fft[i_f_mod, :, :, k] * np.conj(amp_fft['b'][i_f_mod, i_f_car, i_chan, k])
-xspec['b'][i_f_mod, i_f_car, i_chan, k]
+plt.savefig(f'../data/plots/sim_xspect.pdf')
 
