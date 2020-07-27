@@ -246,7 +246,8 @@ chan_combos = list(itertools.product(np.nonzero(picks_hipp)[0],
 mi = []
 for chan_1, chan_2 in tqdm(chan_combos):
     mi_x = cfc_phasediff_func(x[:, chan_1, :].T,
-                              x[:, chan_2, :].T)
+                              x[:, chan_2, :].T,
+                              'sine')
     mi.append(mi_x)
 # Plot it
 plt.clf()
