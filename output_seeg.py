@@ -47,6 +47,37 @@ picks_hipp = (chan_info['region'] == 'Hippocampus').to_numpy()
 picks_parietal = np.isin(chan_info['region'], wm.regions['parietal'])
 
 
+######################################
+# Plot the spectrum for each channel #
+######################################
+
+plt.clf()
+ax = plt.subplot(1, 1, 1)
+colors = ['blue', 'red']
+for color,picks in zip(colors, [picks_parietal, picks_hipp]):
+    #nfft = 2 ** 11
+    #psds, freqs = mne.time_frequency.psd_welch(
+    #                epochs,
+    #                fmin=0, fmax=200,
+    #                n_fft=nfft,
+    #                n_overlap=nfft / 2,
+    #                picks=np.array(epochs.ch_names)[picks])
+    psds, freqs = mne.time_frequency.psd_multitaper(
+                    epochs,
+                    fmin=0, fmax=180,
+                    bandwidth=2,
+                    picks=np.array(epochs.ch_names)[picks])
+    plt.loglog(freqs, np.mean(psds, axis=0).T,
+               color=color)
+plt.ylabel('Power (mV$^2$/Hz)')
+plt.xlabel('Frequency (Hz)')
+plt.xlim(0, 180)
+plt.text(50, 1e-5, 'Parietal', color=colors[0])
+plt.text(50, 5e-6, 'Hipp', color=colors[1])
+plt.tight_layout()
+plt.savefig(plot_dir + 'spectra.png')
+
+
 ###############################
 # Plot the correlation matrix #
 ###############################
