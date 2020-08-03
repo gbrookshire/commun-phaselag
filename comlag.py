@@ -20,6 +20,7 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
+from scipy import stats
 
 
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
@@ -655,6 +656,354 @@ def sine_ols(s_phase, s_amp):
     # Amp, phase, offset
     p = [np.abs(z), np.angle(z), x[0]]
     return p
+
+
+# plt.clf()
+# plt.subplot(1, 2, 1)
+# plt.contourf(np.mean(f_mod, axis=1), f_car, sin_amp)
+# plt.colorbar()
+# plt.subplot(1, 2, 2)
+# plt.contourf(np.mean(f_mod, axis=1), f_car, sin_r)
+# plt.colorbar()
+
+# plt.clf()
+# plt.plot(s_a_phase, s_b_amp[:,i_fc], 'o', alpha=0.2)
+# x_phase = np.linspace(-np.pi, np.pi, 100)
+# plt.plot(x_phase, sine_helper(x_phase, popt[0], popt[1]))
+
+# # Two ways to fit a sine wave
+# # First simulate a signal
+# k = 1000
+# sim_amp = np.random.uniform(0.5, 2.0)
+# sim_offset = np.random.uniform(0.0, 10.0)
+# sim_phase = np.random.uniform(-np.pi, np.pi)
+# sin_fnc = lambda a,p,x: a * np.sin(x + p)
+# x = np.random.uniform(-np.pi, np.pi, k)
+# y = sine_helper(x, sim_amp, sim_phase, sim_offset)
+# y = y + np.random.normal(size=y.shape)
+# plt.clf()
+# plt.plot(x, y, 'o', alpha=0.2)
+# # 1. Using scipy.optimize.curve_fit to estimate the amp and phase of a sine
+# def sine_curve_fit(s_phase, s_amp):
+#     popt, _ = curve_fit(sine_helper,
+#                         s_phase,
+#                         np.squeeze(s_amp))
+#     return popt
+# p_curve_fit = sine_curve_fit(x, y)
+# phase_x = np.arange(-np.pi, np.pi, 1/fs) 
+# plt.plot(phase_x, sine_helper(phase_x, *p_curve_fit),
+#          linestyle='--')
+# # 2. Using OLS
+# # Fit a sine and a cosine, then calculate amp and phase
+# def sine_ols(s_phase, s_amp):
+#     a = np.stack([np.ones(s_phase.shape),
+#                   np.sin(s_phase),
+#                   np.cos(s_phase)])
+#     b = np.squeeze(s_amp)
+#     x,_,_,_ = np.linalg.lstsq(a.T, b, rcond=None)
+#     z = np.complex(*x[1:])
+#     p = [np.abs(z), np.angle(z), x[0]] # Amp, phase, offset
+#     return p
+# p_ols = sine_ols(x, y)
+# plt.plot(phase_x, sine_helper(phase_x, *p_ols),
+#          linestyle=':')
+# # Compare the timing
+# # curve_fit is about 5 times slower
+# %timeit p_curve_fit = sine_curve_fit(x, y)
+# %timeit p_ols = sine_ols(x, y)
+
+
+def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5):
+    """ 2D extension of the Tort algorithm. How does phase in two signals
+    predict gamma in each of the signals?
+
+    Start out by selecting one frequency for phase and one frequency for amp.
+    """
+
+    f_mod = [[9, 11]]
+    f_car = [90]
+    n_cycles = 5
+    n_bins = 18
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+    s = {'a': s_a,
+         'b': s_b}
+
+    # Get high frqeuency amplitude
+    amp = {}
+    for sig in 'ab':
+        amp[sig] = _wavelet_tfr(s[sig], f_car, n_cycles, fs)
+        # Append trials over time if data includes multiple trials
+        # amp.shape: (time, carrier freq)
+        if amp[sig].ndim == 3:
+            amp[sig] = np.concatenate(
+                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            axis=0)
+
+    # Compute the 2D-CFC
+    sig_amp = 'b' # Which signal to use for amplitude FIXME make work for both
+    for i_fm,fm in enumerate(f_mod):
+
+        # Get low frequency phase
+        phase = {}
+        for sig in 'ab':
+            s_filt = bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+            phase[sig] = np.angle(hilbert(s_filt, axis=0))
+            phase[sig] = np.digitize(phase[sig], phase_bins) - 1
+            # Append trials over time if data includes multiple trials
+            if phase[sig].ndim == 2:
+                phase[sig] = np.ravel(phase[sig], 'F')
+
+        # Compute CFC for each carrier freq using KL divergence
+        for i_fc,fc in enumerate(f_car):
+            # Average HF amplitude per LF phase bin
+            amplitude_dist = np.ones([n_bins, n_bins]) # 1 to avoid log(0)
+            for bin_a, bin_b in itertools.product(range(n_bins), range(n_bins)):
+                keep_samps = (phase['a'] == bin_a) & (phase['b'] == bin_b)
+                a = np.mean(amp[sig_amp][keep_samps, i_fc])
+                amplitude_dist[bin_a, bin_b] = a
+
+            # Plot the HF amplitude averaged for each phase bin
+            plt.imshow(amplitude_dist)
+            plt.ylabel('$\\Phi(a)$')
+            plt.xlabel('$\\Phi(b)$')
+            plt.colorbar()
+
+            # Look for sinusoidal modulation along with each LF phase signal
+            mi = {}
+            for sig in 'ab':
+                amp_sig = np.squeeze(amp[sig_amp][:, i_fc])
+                p = sine_ols(phase[sig], amp_sig)
+                # Save the correlation of the sine fit to the real data
+                rval, _ = stats.pearsonr(amp_sig, sine_helper(phase[sig], *p))
+                # mi[sig]['amp'][i_fc, i_fm] = p[0]
+                # mi[sig]['r'][i_fc, i_fm] = rval
+
+            # Look for a 2D von Mises fit
+
+            # Kullback-Leibler divergence of the amp distribution vs uniform
+            amplitude_dist /= np.sum(amplitude_dist)
+            d_kl = np.sum(amplitude_dist * np.log(amplitude_dist * n_bins))
+            mi_mc = d_kl / np.log(n_bins)
+            mi[i_fc, i_fm] = mi_mc
+
+
+
+        
+        # Compute CFC for each carrier freq by checking for sinusoidal
+        # modulation of HF power along with LF phase
+        for i_fc,fc in enumerate(f_car):
+            for sig in ('a', 'b'):
+                amp_sig = np.squeeze(amp[sig][:, i_fc])
+                p = sine_ols(phase_diff, amp_sig)
+                # Save the correlation of the sine fit to the real data
+                rval, _ = stats.pearsonr(amp_sig, sine_helper(phase_diff, *p))
+                mi[sig]['amp'][i_fc, i_fm] = p[0]
+                mi[sig]['r'][i_fc, i_fm] = rval
+
+    return mi
+
+
+
+
+
+
+
+def NEW_METHOD(args): # FIXME Fill in args and function name
+    """
+    Given two signals s_a and s_b, does theta phase in the receiver correlate
+    with gamma-band connectivity between the two signals?
+
+    Parameters
+    ----------
+    s_a: ndarray
+        Sender signal
+    s_b : ndarray
+        Receiver signal
+    fs : int,float
+        Sampling rate
+    f_mod : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the phase of the modulation frequencies.
+    f_car : list of lists (n, 2)
+        Array with a row of cutoff frequencies for each bandpass filter for
+        computing the amplitude at the carrier frequencies.
+    n_cycles : int
+        Number of cycles for the wavelet analysis to compute high-freq power
+    n_bins : int
+        Number of bins for low-frequency phase
+    max_lag : int
+        Maximum lag at which to compute cross-correlations of high-freq power
+
+    Returns
+    -------
+    cm : ndarray (len(f_mod), len(f_car))
+        Connectivity matrix
+    """
+
+    # Simulate some data
+    import numpy as np
+    from scipy.signal import hilbert
+    from tqdm import tqdm
+    import simulate
+    dur = 20
+    fs = 1000
+    t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
+                            noise_amp=2.0,
+                            signal_leakage=0.0,
+                            gamma_lag_a_to_b=0.03,
+                            common_noise_amp=0.0,
+                            common_alpha_amp=0.0)
+    from comlag import _wavelet_tfr, bp_filter
+    # Which frequencies to calculate phase for
+    f_mod_centers = np.logspace(np.log10(2), np.log10(30), 10)
+    f_mod_width = f_mod_centers / 6
+    f_mod = np.tile(f_mod_width, [2, 1]).T \
+                * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+                + np.tile(f_mod_centers, [2, 1]).T
+    # Which frequencies to calculate power for
+    f_car = np.arange(30, 200, 5)
+    # Other params
+    n_cycles = 5
+    n_bins = 10
+    max_lag = 200
+
+    # TODO
+    # Instead of cross-correlating gamma power, try direct gamma time-courses
+
+
+    sig = {'a': s_a, 'b': s_b}
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+    # Get high frequency amplitude using a wavelet transform
+    amp = {s: _wavelet_tfr(sig[s], f_car, n_cycles, fs) for s in sig.keys()}
+
+    # Look at connectivity
+    xcorr_data = np.zeros([n_bins, # LF phase
+                          max_lag * 2, # Cross-corr lag
+                          len(f_mod), # LF phase frequency,
+                          len(f_car)]) # HF amp frequency
+    phase_counts = np.zeros([n_bins, len(f_mod), len(f_car)])
+    #for i_fm, fm in tqdm(enumerate(f_mod)):
+    for i_fm in tqdm(range(len(f_mod))):
+        fm = f_mod[i_fm]
+        # Compute binned LF phase in each signal
+        phase = {}
+        for s in sig.keys():
+            s_filt = bp_filter(sig[s].T, fm[0], fm[1], fs, 2).T
+            s_phase = np.angle(hilbert(s_filt, axis=0))
+            s_binned = np.digitize(s_phase, phase_bins) - 1
+            phase[s] = s_binned
+        # Look at connectivity in HF amplitude
+        for i_fc, fc in enumerate(f_car):
+            amp_a = amp['a'][:, i_fc, 0] #FIXME what's the 3rd dim?
+            amp_b = amp['b'][:, i_fc, 0] #FIXME what's the 3rd dim?
+            amp_a = (amp_a - np.mean(amp_a)) / (np.std(amp_a) * len(amp_a))
+            amp_b = (amp_b - np.mean(amp_b)) / np.std(amp_b)
+            for i_t in range(max_lag, len(sig['a']) - max_lag):
+                lf_phase = phase['b'][i_t] # FIXME both signals insteaf of only 'b'
+                phase_counts[lf_phase, i_fm, i_fc] += 1
+                sl = slice(i_t - max_lag, i_t + max_lag)
+                xc = np.correlate(amp_a[sl], amp_b[sl], mode='same') #FIXME make it work for 'valid'
+                xcorr_data[lf_phase, :, i_fm, i_fc] += xc
+            xcorr_data[lf_phase,:,i_fm,i_fc] /= len(t) # Normalize
+            # # Compute the modulation index
+            # # Doesn't work for xcorr because there are negative values - these are not proportions
+            # # Kullback-Leibler divergence of the xcorr distribution vs uniform
+            # x = np.ravel(xcorr_data[:, :, i_fm, i_fc])
+            # x /= np.sum(x)
+            # d_kl = np.sum(x * np.log(x * n_bins))
+            # mi_mc = d_kl / np.log(n_bins)
+            # mi[i_fc, i_fm] = mi_mc
+
+            # New approach
+            # for each timepoint
+            #   check how strongly non-uniform the distribution across time is
+            #       by testing for differences from 0? RMS?
+            #           sqrt(mean((z - mean(z)) ** 2))
+    # Get the RMS of cross-correlations within each phase-freq, amp-freq, and
+    # time-point, across LF phase bins.
+    xcorr_mean_over_bins = np.mean(xcorr_data, axis=0)
+    rms_bin = np.sqrt(np.mean((xcorr_data - xcorr_mean_over_bins) ** 2, axis=0))
+    rms_time = np.sqrt(np.mean((rms_bin - np.mean(rms_bin, axis=0)) ** 2, axis=0))
+    rms_max = np.max(rms_bin, axis=0)
+
+
+    import matplotlib.pyplot as plt
+    plt.clf()
+    plt.plot(t, s_a)
+    plt.plot(t, s_b)
+    plt.xlim(3, 4)
+    
+    plt.clf()
+    plt.contourf(f_mod_centers, f_car, rms_max.T)
+    plt.xlabel('Phase frequency (Hz)')
+    plt.ylabel('Amplitude frequency (Hz)')
+    plt.colorbar()
+
+
+    i_fm = 5
+    i_fc = 12
+    plt.clf()
+    plt.contourf(xcorr_data[:,:,i_fm,i_fc], levels=50)
+    plt.xlabel('Lag (samp)')
+    plt.ylabel('Phase bin')
+    plt.title(f'Phase at {f_mod_centers[i_fm]:.1f} Hz, amp at {f_car[i_fc]} Hz')
+    plt.colorbar()
+
+    plt.clf()
+    color_lim = np.max(np.abs(xcorr_data))
+    lags = np.arange(-max_lag, max_lag) / fs
+    for i_fc in range(len(f_car)): 
+        plt.subplot(5, 7, i_fc+1) 
+        x = xcorr_data[:,:,i_fm,i_fc]
+        plt.contourf(lags, range(n_bins), x,
+                     levels=np.linspace(-color_lim,
+                                        color_lim, 50),
+                     cmap='RdBu_r') 
+        x_mean = np.mean(x, axis=0)
+        rms = np.sqrt(np.mean((x - x_mean) ** 2, axis=0))
+        plt.plot(lags, rms, '-k')
+        plt.title(f'{f_car[i_fc]} Hz')
+    plt.tight_layout()
+
+
+    ## Pseudocode of the algorithm
+    #max_lag = maximum_xcorr_lag
+    #for freq_mod in freq_mods: # Modulation (LF phase) frequency
+    #    for freq_car in freq_cars: # Carrier (HF amp) frequency
+    #        xcorr_data = np.fill([len(phase_bins), max_lag * 2 + 1], np.nan)
+    #        phase_bin_counts = np.zeros(len(phase_bins))
+    #        for t in range(len(signal)): # For each timepoint
+    #            lf_phase = get_lf_phase(t) # Binned LF phase
+    #            phase_bin_counts[lf_phase] += 1
+    #            xc = xcorr(hf_amp_a[t - max_lag, t + max_lag],
+    #                       hf_amp_b[t - max_lag, t + max_lag])
+    #            xcorr_data[lf_phase, :] += xc
+    #        xcorr_data[lf_phase, :] /= phase_bin_counts[lf_phase] # Avg across segments
+
+def pearson(a, b):
+    """ Calculate the pearson correlation.
+    This is faster than np.corrcoef
+    """
+    cov = np.dot(a - a.mean(), b - b.mean())
+    r = cov / (a.size * a.std() * b.std())
+    return r
+
+def xcorr(a, b, max_lag):
+    """ Normalized cross-correlation
+    """
+    pearson = lambda a,b:  np.dot(a - a.mean(), b - b.mean()) / (a.size * a.std() * b.std())
+    lags = range(-max_lag, max_lag)
+    padding = np.zeros(max_lag)
+    a = np.concatenate([padding, a, padding])
+    b = np.concatenate([padding, b, padding])
+    xc = []
+    for lag in lags:
+        x = pearson(a, np.roll(b, lag))
+        xc.append(x)
+    return lags, xc
+
 def bp_filter(data, lowcut, highcut, fs, order=2):
     def butter_bandpass(lowcut, highcut, fs, order):
         nyq = 0.5 * fs
@@ -665,3 +1014,113 @@ def bp_filter(data, lowcut, highcut, fs, order=2):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = filtfilt(b, a, data)
     return y
+
+
+
+
+#############
+# SKETCHPAD # 
+#############
+
+# Fit a single peak that wraps in phase with each signal 
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import scipy
+import scipy.stats
+
+def vonmises(x, kappa, mu, scale):
+    """ Von Mises distribution
+    see also scipy.stats.vonmises.fit()
+    """
+    y = scipy.stats.vonmises.pdf(x, kappa, mu) * scale
+    return y
+
+def vonmises2d(x1, x2, kappa, mu1, mu2, scale):
+    """
+
+    Parameters
+    ----------
+    x1, x2 : np.ndarray
+        Phase of each dimension. Bounded from (-pi, pi).
+    kappa : float
+        Spread of the Von Mises peak. Bounded from [0, inf].
+    mu1, mu2 : float
+        The center of the distribution in each dimension.
+    scale : float
+        Multiplier to scale the whole distribution.
+    kappa : float
+    """
+    # Get the Euclidean distance to the peak phase after wrapping to (0, 2pi)
+    piwrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
+    # c = np.sqrt((piwrap(x1 - mu1) ** 2) + (piwrap(x2 - mu2) ** 2))
+    #c = np.max(np.abs(np.stack([x1 - mu1, x2 - mu2])), axis=0)
+    c1 = piwrap(x1 - mu1)
+    c2 = piwrap(x2 - mu2)
+    c = np.stack([c1, c2])
+    inx = np.argmax(np.abs(c), axis=0)
+    c = np.array([c[inx[i], i] for i in range(len(c1))])
+    #c = c / np.sqrt(2)
+    #c = np.sqrt(((x1 - mu1) ** 2) + ((x2 - mu2) ** 2))
+    #c = c * 2 / np.sqrt(2)  # Scale to end up with distances that are at most pi
+    # c = ((x1 - mu1) + (x2 - mu2)) / 2
+    # Fit to a Von Mises distrbution that's centered around 0
+    y = vonmises(c, kappa, 0, 1) * scale
+    return y
+
+def vm2d_helper(x, kappa, mu1, mu2, scale):
+    """ x is an array. First dim is for the different variables
+    """
+    y = vonmises2d(x[0,:], x[1,:], kappa, mu1, mu2, scale)
+    return y
+
+# Simulate HF amplitude at two LF phases
+k = int(1e3)
+x1, x2 = (np.random.uniform(-np.pi, np.pi, size=k) for _ in range(2))
+kappa = np.random.uniform(0.1, 5)
+mu1, mu2 = (np.random.uniform(-np.pi, np.pi) for _ in range(2))
+scale = np.random.normal(loc=5, scale=1)
+noise_amp = 0
+noise = np.random.normal(scale=noise_amp, size=x1.shape)
+
+x = np.stack([x1, x2])
+y = vm2d_helper(x, kappa, mu1, mu2, scale)
+y = y + noise
+bounds = [(0.0001, 10), # kappa
+          (-np.pi, np.pi), # mu
+          (-np.pi, np.pi), # mu
+          (0, 100)] # scale
+popt, pcov = scipy.optimize.curve_fit(vm2d_helper, x, y)
+
+plt.clf()
+plt.subplot(1, 2, 1)
+plt.plot(x1, y, 'o')
+plt.plot(x2, y, 'o')
+
+ax = plt.subplot(1, 2, 2, projection='3d')
+ax.plot_trisurf(x1, x2, y, cmap='viridis')
+ax.view_init(azim=0, elev=90)
+
+
+msg = f"""
+      Original
+      k = {kappa:.2f}
+      mu = {[mu1, mu2]}
+      scale = {scale:.2f}
+      
+      Fitted
+      k = {popt[0]:.2f}
+      mu = {popt[1:3]}
+      scale = {popt[3]:.2f}
+      
+      Error
+      k = {kappa - popt[0]:.2f}
+      mu = {np.array([mu1, mu2]) - popt[1:3]}
+      scale = {scale - popt[3]:.2f}
+      """
+print(msg)
+
+
+
+
+
