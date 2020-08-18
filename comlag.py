@@ -18,6 +18,7 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 
 """
 
+import itertools
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 from scipy import stats
@@ -713,19 +714,27 @@ def sine_ols(s_phase, s_amp):
 # %timeit p_ols = sine_ols(x, y)
 
 
-def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5):
-    """ 2D extension of the Tort algorithm. How does phase in two signals
-    predict gamma in each of the signals?
+def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
+    """ How does phase in two signals predict gamma in each of the signals?
+    Fit Von Mises functions to the HF amplitude, averaged within LF phase bins.
+    Then fit a Von Mises function to the combined phase of the 2 signals.
 
     Start out by selecting one frequency for phase and one frequency for amp.
     """
 
-    f_mod = [[9, 11]]
-    f_car = [90]
-    n_cycles = 5
-    n_bins = 18
-    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+    #### For testing
+    # from comlag import *
+    # from comlag import _wavelet, _wavelet_tfr, _buffer, _match_dims
+    # f_mod = [[9, 11]]
+    # f_car = [90]
+    # n_cycles = 5
+    # n_bins = 18
 
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+    phase_bin_centers = np.mean(np.stack([phase_bins[1:], phase_bins[:-1]]),
+                                axis=0)
+
+    rsquare = lambda x,y: scipy.stats.pearsonr(x,y)[0] ** 2
     s = {'a': s_a,
          'b': s_b}
 
@@ -742,64 +751,96 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5):
 
     # Compute the 2D-CFC
     sig_amp = 'b' # Which signal to use for amplitude FIXME make work for both
+    n_vonmises_params = 3
+    n_vonmises_2d_params = 4
+    fits = {}
+    fits['a'] = np.full([len(f_mod), len(f_car), n_vonmises_params],
+                         np.nan)
+    fits['b'] = fits['a'].copy()
+    fits['2d'] = np.full([len(f_mod), len(f_car), n_vonmises_2d_params],
+                          np.nan)
+    rsq = {}
+    rsq['a'] = np.full([len(f_mod), len(f_car)],
+                        np.nan)
+    rsq['b'] = rsq['a'].copy()
+    rsq['2d'] = rsq['a'].copy()
     for i_fm,fm in enumerate(f_mod):
 
         # Get low frequency phase
         phase = {}
+        phase_b = {} # Binned
         for sig in 'ab':
             s_filt = bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
             phase[sig] = np.angle(hilbert(s_filt, axis=0))
-            phase[sig] = np.digitize(phase[sig], phase_bins) - 1
+            phase_b[sig] = np.digitize(phase[sig], phase_bins) - 1
             # Append trials over time if data includes multiple trials
             if phase[sig].ndim == 2:
                 phase[sig] = np.ravel(phase[sig], 'F')
+                phase_b[sig] = np.ravel(phase_b[sig], 'F')
+
+        # # Plot the HF amplitude as a function of phase in each signal
+        # plt.clf()
+        # plt.plot(phase['a'], amp['b'], 'o', alpha=0.2)
+        # plt.plot(phase['b'], amp['b'], 'o', alpha=0.2)
 
         # Compute CFC for each carrier freq using KL divergence
         for i_fc,fc in enumerate(f_car):
             # Average HF amplitude per LF phase bin
             amplitude_dist = np.ones([n_bins, n_bins]) # 1 to avoid log(0)
             for bin_a, bin_b in itertools.product(range(n_bins), range(n_bins)):
-                keep_samps = (phase['a'] == bin_a) & (phase['b'] == bin_b)
+                keep_samps = (phase_b['a'] == bin_a) & (phase_b['b'] == bin_b)
                 a = np.mean(amp[sig_amp][keep_samps, i_fc])
                 amplitude_dist[bin_a, bin_b] = a
 
-            # Plot the HF amplitude averaged for each phase bin
-            plt.imshow(amplitude_dist)
-            plt.ylabel('$\\Phi(a)$')
-            plt.xlabel('$\\Phi(b)$')
-            plt.colorbar()
+            # Fit separate Von Mises distributions for amp and phase in each sig
+            bounds = ([1e-10, -np.pi, 0], # Kappa, mu, scale
+                      [np.inf, np.pi, np.inf])
+            x = phase_bin_centers
+            y_a = np.mean(amplitude_dist, axis=0)
+            y_b = np.mean(amplitude_dist, axis=1)
+            popt_a, _ = scipy.optimize.curve_fit(vonmises,
+                                                 x, y_a,
+                                                 bounds=bounds)
+            popt_b, _ = scipy.optimize.curve_fit(vonmises,
+                                                 x, y_b,
+                                                 bounds=bounds)
+            # Save the model fits
+            fits['a'][i_fm, i_fc, :] = popt_a
+            fits['b'][i_fm, i_fc, :] = popt_b
+            # Save goodness-of-fit metrics
+            rsq['a'][i_fm, i_fc] = rsquare(y_a, vonmises(x, *popt_a))
+            rsq['b'][i_fm, i_fc] = rsquare(y_b, vonmises(x, *popt_b))
+            # plt.clf()
+            # plt.plot(x, y_a, '-r', label='Data sig$_a$')
+            # plt.plot(x, vonmises(x, *popt_a), '--r', label='Fit sig$_a$')
+            # plt.plot(x, y_b, '-b', label='Data sig$_b$')
+            # plt.plot(x, vonmises(x, *popt_b), '--b', label='Fit sig$_b$')
+            # plt.xlabel('LF Phase')
+            # plt.ylabel('HF power')
+            # plt.legend()
+            # plt.savefig('/Users/geoff/Desktop/von_mises_fits.png')
 
-            # Look for sinusoidal modulation along with each LF phase signal
-            mi = {}
-            for sig in 'ab':
-                amp_sig = np.squeeze(amp[sig_amp][:, i_fc])
-                p = sine_ols(phase[sig], amp_sig)
-                # Save the correlation of the sine fit to the real data
-                rval, _ = stats.pearsonr(amp_sig, sine_helper(phase[sig], *p))
-                # mi[sig]['amp'][i_fc, i_fm] = p[0]
-                # mi[sig]['r'][i_fc, i_fm] = rval
-
-            # Look for a 2D von Mises fit
-
-            # Kullback-Leibler divergence of the amp distribution vs uniform
-            amplitude_dist /= np.sum(amplitude_dist)
-            d_kl = np.sum(amplitude_dist * np.log(amplitude_dist * n_bins))
-            mi_mc = d_kl / np.log(n_bins)
-            mi[i_fc, i_fm] = mi_mc
-
-
-
-        
-        # Compute CFC for each carrier freq by checking for sinusoidal
-        # modulation of HF power along with LF phase
-        for i_fc,fc in enumerate(f_car):
-            for sig in ('a', 'b'):
-                amp_sig = np.squeeze(amp[sig][:, i_fc])
-                p = sine_ols(phase_diff, amp_sig)
-                # Save the correlation of the sine fit to the real data
-                rval, _ = stats.pearsonr(amp_sig, sine_helper(phase_diff, *p))
-                mi[sig]['amp'][i_fc, i_fm] = p[0]
-                mi[sig]['r'][i_fc, i_fm] = rval
+            # Fit the 2d Van Mises function
+            x_a = np.repeat(phase_bin_centers, phase_bin_centers.size)
+            x_b = np.tile(phase_bin_centers, phase_bin_centers.size)
+            x = np.stack([x_a, x_b])
+            y = np.reshape(amplitude_dist, [-1], order='C') # By rows
+            bounds = ((1e-10, -np.pi, -np.pi, 0), # kappa, mu1, mu2, scale
+                      (np.inf, np.pi, np.pi, np.inf))
+            popt_2d, _ = scipy.optimize.curve_fit(vm2d_helper, x, y,
+                                                  bounds=bounds)
+            # Save the model fits
+            fits['2d'][i_fm, i_fc, :] = popt_2d
+            # Save goodness-of-fit metrics
+            rsq['2d'][i_fm, i_fc] = rsquare(y, vm2d_helper(x, *popt_2d))
+            # plt.clf()
+            # p1, p2 = np.meshgrid(phase_bins[:-1], phase_bins[:-1])
+            # plt.contourf(p1, p2, amplitude_dist)
+            # plt.plot(popt_2d[2], popt_2d[1], 'ro') # Plot the 2D VonMises fit
+            # plt.ylabel('$\\Phi(b)$')
+            # plt.xlabel('$\\Phi(a)$')
+            # plt.colorbar()
+            # plt.savefig('/Users/geoff/Desktop/von_mises_2D_fits.png')
 
     return mi
 
