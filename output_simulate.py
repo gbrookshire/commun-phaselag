@@ -161,3 +161,53 @@ plt.colorbar()
 plt.tight_layout()
 plt.savefig(f'../data/plots/sim_xspect.png')
 
+
+#########################################
+# Compute CFC using 2D Von Mises method #
+#########################################
+
+fits, rsq = comlag.cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car)
+
+def plot_contour(x, **kwargs):
+    plt.contourf(f_mod_centers, f_car, x.T, **kwargs)
+    plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+
+plt.clf()
+
+plt.subplot(2, 4, 1)
+plot_contour(fits['a'][:, :, 0], levels=50)
+plt.ylabel('Amp freq (Hz)')
+plt.title('$\\kappa$: phase in A')
+
+plt.subplot(2, 4, 2)
+plot_contour(fits['b'][:, :, 0], levels=50)
+plt.title('$\\kappa$: phase in B')
+
+plt.subplot(2, 4, 3)
+plot_contour(fits['2d'][:, :, 0], levels=50)
+plt.title('$\\kappa$: combined phase')
+
+plt.subplot(2, 4, 4)
+plot_contour(fits['2d_cont'][:, :, 0], levels=50)
+plt.title('$\\kappa$: combined (controlled)')
+
+plt.subplot(2, 4, 5)
+levels = np.linspace(0, 1, 100)
+plot_contour(rsq['a'][:, :], levels=levels)
+plt.ylabel('Amp freq (Hz)')
+plt.xlabel('Phase freq (Hz)')
+plt.title('$R^2$: phase in A')
+
+plt.subplot(2, 4, 6)
+plot_contour(rsq['b'][:, :], levels=levels)
+plt.title('$R^2$: phase in B')
+
+plt.subplot(2, 4, 7)
+plot_contour(rsq['2d'][:, :], levels=levels)
+plt.title('$R^2$: combined phase')
+
+plt.subplot(2, 4, 8)
+plot_contour(rsq['2d_cont'][:, :], levels=levels)
+plt.title('$R^2$: combined (controlled)')
+
+plt.tight_layout()

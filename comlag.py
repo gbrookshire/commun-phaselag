@@ -21,7 +21,7 @@ Use plain old PAC between areas but with LF phase difference instead of LF phase
 import itertools
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
-from scipy import stats
+from scipy import stats, optimize
 
 
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
@@ -684,7 +684,7 @@ def sine_ols(s_phase, s_amp):
 # y = y + np.random.normal(size=y.shape)
 # plt.clf()
 # plt.plot(x, y, 'o', alpha=0.2)
-# # 1. Using scipy.optimize.curve_fit to estimate the amp and phase of a sine
+# # 1. Using optimize.curve_fit to estimate the amp and phase of a sine
 # def sine_curve_fit(s_phase, s_amp):
 #     popt, _ = curve_fit(sine_helper,
 #                         s_phase,
@@ -714,7 +714,7 @@ def sine_ols(s_phase, s_amp):
 # %timeit p_ols = sine_ols(x, y)
 
 
-def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
+def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
     """ How does phase in two signals predict gamma in each of the signals?
     Fit Von Mises functions to the HF amplitude, averaged within LF phase bins.
     Then fit a Von Mises function to the combined phase of the 2 signals.
@@ -722,7 +722,7 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
     Start out by selecting one frequency for phase and one frequency for amp.
     """
 
-    #### For testing
+    # #### For testing
     # from comlag import *
     # from comlag import _wavelet, _wavelet_tfr, _buffer, _match_dims
     # f_mod = [[9, 11]]
@@ -734,7 +734,7 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
     phase_bin_centers = np.mean(np.stack([phase_bins[1:], phase_bins[:-1]]),
                                 axis=0)
 
-    rsquare = lambda x,y: scipy.stats.pearsonr(x,y)[0] ** 2
+    rsquare = lambda x,y: stats.pearsonr(x,y)[0] ** 2
     s = {'a': s_a,
          'b': s_b}
 
@@ -759,11 +759,13 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
     fits['b'] = fits['a'].copy()
     fits['2d'] = np.full([len(f_mod), len(f_car), n_vonmises_2d_params],
                           np.nan)
+    fits['2d_cont'] = fits['2d'].copy()
     rsq = {}
     rsq['a'] = np.full([len(f_mod), len(f_car)],
                         np.nan)
     rsq['b'] = rsq['a'].copy()
     rsq['2d'] = rsq['a'].copy()
+    rsq['2d_cont'] = rsq['a'].copy()
     for i_fm,fm in enumerate(f_mod):
 
         # Get low frequency phase
@@ -798,10 +800,10 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
             x = phase_bin_centers
             y_a = np.mean(amplitude_dist, axis=0)
             y_b = np.mean(amplitude_dist, axis=1)
-            popt_a, _ = scipy.optimize.curve_fit(vonmises,
+            popt_a, _ = optimize.curve_fit(vonmises,
                                                  x, y_a,
                                                  bounds=bounds)
-            popt_b, _ = scipy.optimize.curve_fit(vonmises,
+            popt_b, _ = optimize.curve_fit(vonmises,
                                                  x, y_b,
                                                  bounds=bounds)
             # Save the model fits
@@ -827,7 +829,7 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
             y = np.reshape(amplitude_dist, [-1], order='C') # By rows
             bounds = ((1e-10, -np.pi, -np.pi, 0), # kappa, mu1, mu2, scale
                       (np.inf, np.pi, np.pi, np.inf))
-            popt_2d, _ = scipy.optimize.curve_fit(vm2d_helper, x, y,
+            popt_2d, _ = optimize.curve_fit(vm2d_helper, x, y,
                                                   bounds=bounds)
             # Save the model fits
             fits['2d'][i_fm, i_fc, :] = popt_2d
@@ -842,14 +844,76 @@ def cfc_tort_2d(s_a, s_b, fs): #, f_mod, f_car, n_cycles=5, n_bins=18):
             # plt.colorbar()
             # plt.savefig('/Users/geoff/Desktop/von_mises_2D_fits.png')
 
-    return mi
+            # Fit a 2D Von Mises function after removing the influence of the
+            # LF phase in each signal independently.
+            amp_cont = amplitude_dist.copy()
+            amp_cont -= np.tile(vonmises(phase_bin_centers, *popt_a),
+                                [n_bins, 1])
+            amp_cont -= np.tile(vonmises(phase_bin_centers, *popt_b),
+                                [n_bins, 1]).T
+            y = np.reshape(amp_cont, [-1], order='C') # By rows
+            popt_2d_cont, _ = optimize.curve_fit(vm2d_helper, x, y,
+                                                  bounds=bounds)
+            # Save the model fits
+            fits['2d_cont'][i_fm, i_fc, :] = popt_2d_cont
+            # Save goodness-of-fit metrics
+            rsq['2d_cont'][i_fm, i_fc] = rsquare(y, vm2d_helper(x, *popt_2d_cont))
+
+    return fits, rsq
+
+
+def vonmises(x, kappa, mu, scale):
+    """ Von Mises distribution
+    also check out scipy.stats.vonmises.fit()
+    """
+    y = stats.vonmises.pdf(x, kappa, mu) * scale
+    return y
+
+
+def vonmises2d(x1, x2, kappa, mu1, mu2, scale):
+    """
+    Fit a Von Mises distribution in two dimensions. There is a single peak
+    centered at (mu1, mu2), with spread kappa. The peak falls off as you move
+    away from this peak, and wraps around in phase of both input dimensions.
+
+    Parameters
+    ----------
+    x1, x2 : np.ndarray
+        Phase of each dimension. Bounded from (-pi, pi).
+    kappa : float
+        Spread of the Von Mises peak. Bounded from [0, inf].
+    mu1, mu2 : float
+        The center of the distribution in each dimension.
+    scale : float
+        Multiplier to scale the whole distribution.
+    kappa : float
+    """
+    # Get the Euclidean distance to the peak phase after wrapping to (0, 2pi)
+    piwrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
+    # c = np.sqrt((piwrap(x1 - mu1) ** 2) + (piwrap(x2 - mu2) ** 2))
+    #c = np.max(np.abs(np.stack([x1 - mu1, x2 - mu2])), axis=0)
+    c1 = piwrap(x1 - mu1)
+    c2 = piwrap(x2 - mu2)
+    c = np.stack([c1, c2])
+    # Take the largest of the two distances
+    inx = np.argmax(np.abs(c), axis=0)
+    c = np.array([c[inx[i], i] for i in range(len(c1))])
+    # Fit to a Von Mises distrbution that's centered around 0
+    y = vonmises(c, kappa, 0, 1) * scale
+    return y
+
+
+def vm2d_helper(x, kappa, mu1, mu2, scale):
+    """ x is an array. First dim is for the different variables
+    """
+    y = vonmises2d(x[0,:], x[1,:], kappa, mu1, mu2, scale)
+    return y
 
 
 
 
 
-
-
+'''
 def NEW_METHOD(args): # FIXME Fill in args and function name
     """
     Given two signals s_a and s_b, does theta phase in the receiver correlate
@@ -1022,6 +1086,7 @@ def NEW_METHOD(args): # FIXME Fill in args and function name
     #                       hf_amp_b[t - max_lag, t + max_lag])
     #            xcorr_data[lf_phase, :] += xc
     #        xcorr_data[lf_phase, :] /= phase_bin_counts[lf_phase] # Avg across segments
+    '''
 
 def pearson(a, b):
     """ Calculate the pearson correlation.
@@ -1066,54 +1131,11 @@ def bp_filter(data, lowcut, highcut, fs, order=2):
 # Fit a single peak that wraps in phase with each signal 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D # for projection='3d'
 import scipy
-import scipy.stats
 
-def vonmises(x, kappa, mu, scale):
-    """ Von Mises distribution
-    see also scipy.stats.vonmises.fit()
-    """
-    y = scipy.stats.vonmises.pdf(x, kappa, mu) * scale
-    return y
 
-def vonmises2d(x1, x2, kappa, mu1, mu2, scale):
-    """
-
-    Parameters
-    ----------
-    x1, x2 : np.ndarray
-        Phase of each dimension. Bounded from (-pi, pi).
-    kappa : float
-        Spread of the Von Mises peak. Bounded from [0, inf].
-    mu1, mu2 : float
-        The center of the distribution in each dimension.
-    scale : float
-        Multiplier to scale the whole distribution.
-    kappa : float
-    """
-    # Get the Euclidean distance to the peak phase after wrapping to (0, 2pi)
-    piwrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
-    # c = np.sqrt((piwrap(x1 - mu1) ** 2) + (piwrap(x2 - mu2) ** 2))
-    #c = np.max(np.abs(np.stack([x1 - mu1, x2 - mu2])), axis=0)
-    c1 = piwrap(x1 - mu1)
-    c2 = piwrap(x2 - mu2)
-    c = np.stack([c1, c2])
-    inx = np.argmax(np.abs(c), axis=0)
-    c = np.array([c[inx[i], i] for i in range(len(c1))])
-    #c = c / np.sqrt(2)
-    #c = np.sqrt(((x1 - mu1) ** 2) + ((x2 - mu2) ** 2))
-    #c = c * 2 / np.sqrt(2)  # Scale to end up with distances that are at most pi
-    # c = ((x1 - mu1) + (x2 - mu2)) / 2
-    # Fit to a Von Mises distrbution that's centered around 0
-    y = vonmises(c, kappa, 0, 1) * scale
-    return y
-
-def vm2d_helper(x, kappa, mu1, mu2, scale):
-    """ x is an array. First dim is for the different variables
-    """
-    y = vonmises2d(x[0,:], x[1,:], kappa, mu1, mu2, scale)
-    return y
+'''
 
 # Simulate HF amplitude at two LF phases
 k = int(1e3)
@@ -1121,17 +1143,17 @@ x1, x2 = (np.random.uniform(-np.pi, np.pi, size=k) for _ in range(2))
 kappa = np.random.uniform(0.1, 5)
 mu1, mu2 = (np.random.uniform(-np.pi, np.pi) for _ in range(2))
 scale = np.random.normal(loc=5, scale=1)
-noise_amp = 0
-noise = np.random.normal(scale=noise_amp, size=x1.shape)
+noise_amp = 0.001
+noise = np.random.normal(scale=noise_amp * scale, size=x1.shape)
 
 x = np.stack([x1, x2])
 y = vm2d_helper(x, kappa, mu1, mu2, scale)
 y = y + noise
-bounds = [(0.0001, 10), # kappa
+bounds = [(1e-10, np.inf), # kappa
           (-np.pi, np.pi), # mu
           (-np.pi, np.pi), # mu
-          (0, 100)] # scale
-popt, pcov = scipy.optimize.curve_fit(vm2d_helper, x, y)
+          (0, np.inf)] # scale
+popt, pcov = optimize.curve_fit(vm2d_helper, x, y)
 
 plt.clf()
 plt.subplot(1, 2, 1)
@@ -1164,4 +1186,80 @@ print(msg)
 
 
 
+k = int(1e3)
+x = np.random.uniform(-np.pi, np.pi, size=k)
+kappa = np.random.uniform(0.1, 5)
+mu = np.random.uniform(-np.pi, np.pi)
+scale = np.random.normal(loc=5, scale=1)
+noise_amp = 0.001
+noise = np.random.normal(scale=noise_amp * scale, size=x1.shape)
 
+y = vonmises(x, kappa, mu, scale)
+y = y + noise
+
+# Fit using curve_fit
+bounds = [(1e-10, np.inf), # kappa
+          (-np.pi, np.pi), # mu
+          (0, np.inf)] # scale
+popt_cf, pcov = optimize.curve_fit(vonmises, x, y)
+
+# Fit using leastsq
+def resid(p, x, y):
+    return y - vonmises(x, *p)
+popt_ls, pcov = optimize.leastsq(resid,
+                                    [0.1, 0, 1],
+                                    args=(x, y))
+popt_ls[1] = piwrap(popt_ls[1])
+
+# Plot the model fits
+labels = ('True', 'CF', 'LS')
+true_vals = (kappa, mu, scale)
+point_types = ('*k', '+c', 'xm')
+ylims = ([0, 10], [-3.5, 3.5], [0, 10])
+plt.clf()
+for i_param in range(3):
+    plt.subplot(1, 3, i_param + 1)
+    params = [true_vals[i_param],
+              popt_cf[i_param],
+              popt_ls[i_param]]
+    for p,ptype,lab in zip(params, point_types, labels):
+        plt.plot(0, p, ptype, label=lab)
+    plt.ylim(ylims[i_param])
+plt.legend()
+plt.tight_layout()
+
+
+msg = f"""
+      Original
+      k = {kappa:.2f}
+      mu = {mu}
+      scale = {scale:.2f}
+      
+      Fitted - curve_fit
+      k = {popt_cf[0]:.2f}
+      mu = {popt_cf[1]:.2f}
+      scale = {popt_cf[2]:.2f}
+
+      Fitted - leastsq
+      k = {popt_ls[0]:.2f}
+      mu = {piwrap(popt_ls[1]):.2f}
+      scale = {popt_ls[2]:.2f}
+      
+      Error - curve_fit
+      k = {kappa - popt_cf[0]:.2f}
+      mu = {mu - popt_cf[1]:.2f}
+      scale = {scale - popt_cf[2]:.2f}
+
+      Error - leastsq
+      k = {kappa - popt_ls[0]:.2f}
+      mu = {mu - popt_ls[1]:.2f}
+      scale = {scale - popt_ls[2]:.2f}
+      """
+print(msg)
+
+
+
+
+
+
+'''
