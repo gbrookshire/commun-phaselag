@@ -18,6 +18,7 @@ import comlag
 import sys
 sys.path.append('../../wm-seeg/analysis/') # Desktop
 sys.path.append('../../2020_wm-seeg/wm-seeg/analysis/') # Laptop
+sys.path.append('/rds/projects/p/panyz-wm-seeg/wm-seeg/analysis') # Bluebear
 import wm
 
 plt.ion()
