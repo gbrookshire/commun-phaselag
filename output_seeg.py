@@ -495,6 +495,74 @@ save_fname = f'xmi.png'
 plt.savefig(plot_dir + save_fname)
 
 
+#########################
+# 2D Von Mises analysis #
+#########################
+
+chan_combos = list(itertools.product(np.nonzero(picks_hipp)[0],
+                                     np.nonzero(picks_parietal)[0]))
+fits = []
+rsq = []
+for chan_1, chan_2 in tqdm(chan_combos):
+    fits_i, rsq_i = comlag.cfc_vonmises_2d(x[:, chan_1, :].T,
+                                           x[:, chan_2, :].T,
+                                           epochs.info['sfreq'],
+                                           f_mod,
+                                           f_car)
+    fits.append(fits_i)
+    rsq.append(rsq_i)
+
+# Save the results
+write_hdf5(save_dir + 'vonmises_2d.h5',
+           {'fits': fits,
+            'rsq': rsq,
+            'f_mod': f_mod,
+            'f_car': f_car,
+            'f_mod_centers': f_mod_centers},
+           overwrite=True)
+
+# Read the results and plot it 
+res = read_hdf5(save_dir + 'vonmises_2d.h5')
+
+def plot_contour(x, **kwargs):
+    plt.contourf(res['f_mod_centers'], res['f_car'], x.T, **kwargs)
+    plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    plt.ylabel('Amp freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+
+
+# # Get the average fits across all channel pairs
+# avg_fit = {key: np.mean([e[key] for e in res['fits']], axis=0)
+#             for key in res['fits'][0].keys()}
+# f = avg_fit
+
+for i_combo in range(len(chan_combos)):
+    f = res['fits'][i_combo]
+
+    plt.close()
+    plt.clf()
+
+    plt.subplot(2, 2, 1)
+    plot_contour(f['a'][:, :, 0], levels=50)
+    plt.title('$\\kappa$: phase in Hipp')
+
+    plt.subplot(2, 2, 2)
+    plot_contour(f['b'][:, :, 0], levels=50)
+    plt.title('$\\kappa$: phase in Cortex')
+
+    plt.subplot(2, 2, 3)
+    plot_contour(f['2d'][:, :, 0], levels=50)
+    plt.title('$\\kappa$: combined phase')
+
+    plt.subplot(2, 2, 4)
+    plot_contour(f['2d_cont'][:, :, 0], levels=50)
+    plt.title('$\\kappa$: combined (controlled)')
+
+    plt.tight_layout()
+
+    input('Press ENTER to go on')
+
+
 ###################
 ###################
 ####           ####
