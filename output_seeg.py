@@ -504,6 +504,7 @@ chan_combos = list(itertools.product(np.nonzero(picks_hipp)[0],
 fits = []
 rsq = []
 for chan_1, chan_2 in tqdm(chan_combos):
+    print chan1, chan2
     fits_i, rsq_i = comlag.cfc_vonmises_2d(x[:, chan_1, :].T,
                                            x[:, chan_2, :].T,
                                            epochs.info['sfreq'],
@@ -526,7 +527,7 @@ res = read_hdf5(save_dir + 'vonmises_2d.h5')
 
 def plot_contour(x, **kwargs):
     plt.contourf(res['f_mod_centers'], res['f_car'], x.T, **kwargs)
-    plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    plt.colorbar(format='%.3f', ticks=[x.min(), x.max()])
     plt.ylabel('Amp freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
 
@@ -536,7 +537,7 @@ def plot_contour(x, **kwargs):
 #             for key in res['fits'][0].keys()}
 # f = avg_fit
 
-for i_combo in range(len(chan_combos)):
+for i_combo in tqdm(range(len(chan_combos))):
     f = res['fits'][i_combo]
 
     plt.close()
@@ -560,7 +561,10 @@ for i_combo in range(len(chan_combos)):
 
     plt.tight_layout()
 
-    input('Press ENTER to go on')
+    chan1, chan2 = chan_combos[i_combo]
+    fname = f"{save_dir}/plots/vm2d_chans_{chan1}_{chan2}.png"
+    plt.savefig(fname)
+
 
 
 ###################
