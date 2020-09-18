@@ -194,3 +194,278 @@ plot_contour(fits['2d_cont'][:, :, 0], levels=50)
 plt.title('$\\kappa$: combined (controlled)')
 
 plt.tight_layout()
+
+
+##########################
+###### Sketchpad #########
+##########################
+
+#######################################################
+# 1) HF power in region 2 as a function of phase diff #
+#######################################################
+
+from comlag import *
+from comlag import _wavelet_tfr, _buffer, _match_dims
+
+f_mod = [[7, 14]]
+f_car = [90]
+n_cycles = 5
+n_bins = 18
+phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+fm = f_mod[0]
+i_fc = 0
+
+x = {'a': s_a, 'b': s_b}
+amp = {}
+phase = {}
+for sig in 'ab':
+
+    # Get high frequency amplitude using a wavelet transform
+    amp[sig] = _wavelet_tfr(x[sig], f_car, n_cycles, fs)
+
+    # Compute LF phase
+    s_filt = bp_filter(x[sig].T, fm[0], fm[1], fs, 2).T
+    s_phase = np.angle(hilbert(s_filt, axis=0))
+    phase[sig] = s_phase
+
+plt.clf()
+
+# Plot HF power as a function phase-difference.
+# On first glance, it looks pretty good.
+# Compute the phase difference
+phase_diff = phase['a'] - phase['b']
+phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+# Average HF amplitude per LF phase bin
+amplitude_dist = np.ones(n_bins) # default is 1 to avoid log(0)
+for phase_bin in np.unique(phase_diff):
+    amplitude_dist[phase_bin] = np.mean(amp['b'][phase_diff == phase_bin, i_fc])
+# Plot the result
+plt.subplot(2, 1, 1)
+plt.plot(phase_bins[:-1], amplitude_dist)
+plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.xlabel('LF phase difference (rad)')
+plt.ylabel('HF power')
+
+# Average HF amplitude per LF phase bin in BOTH signals.
+# When we look at HF power as a function of phase in each signal, we can see
+# that it's not phase-difference per se that determines HF power -- if it were,
+# HF power would follow a downward diagonal line. Instead, HF power depends on
+# a specific combination of LF phase in each signal.
+phase_dig = {} # Digitize the phase into bins
+for sig in 'ab':
+    phase_dig[sig] = np.digitize(phase[sig], phase_bins) - 1
+amplitude_dist = np.ones([n_bins, n_bins]) # default is 1 to avoid log(0)
+for bin_a in np.unique(phase_diff):
+    for bin_b in np.unique(phase_diff):
+        phase_sel = (phase_dig['a'] == bin_a) & (phase_dig['b'] == bin_b)
+        amplitude_dist[bin_a, bin_b] = np.mean(amp['b'][phase_sel, i_fc])
+plt.subplot(2, 2, 3)
+plt.imshow(amplitude_dist)
+plt.xlabel('Binned LF phase in B')
+plt.ylabel('Binned LF phase in A')
+plt.colorbar(label='HF power in B')
+
+# Plot the phase difference as a function of phase in each signal. If phase
+# difference directly determines HF power, we should see a line along one of
+# the equal color values in this plot.
+plt.subplot(2, 2, 4)
+phase_bin_mat = np.tile(phase_bins, [len(phase_bins), 1])
+phase_diff_mat = phase_bin_mat - phase_bin_mat.T
+phase_diff_mat = (phase_diff_mat + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+plt.imshow(phase_diff_mat, cmap=plt.cm.twilight)
+plt.colorbar(label='Phase difference')
+plt.xlabel('Binned LF phase in B')
+plt.ylabel('Binned LF phase in A')
+
+plt.tight_layout()
+
+
+######################################################################
+# 2) HF coherence between region 1 and 2 as a function of phase diff #
+######################################################################
+
+# I'm not actually sure how to do this
+
+
+
+####################################################################
+# 3) HF mutual info b/w region 1 and 2 as a function of phase diff #
+####################################################################
+
+# Use the setup from (1)
+import gcmi
+
+filt = {}
+x_2d = {}
+for sig in 'ab':
+    # Filter into the HG band
+    filt = bp_filter(x[sig], 70, 150, fs)
+    # Make a 2d version of the signal with it's Hilbert transform
+    h = hilbert(filt)
+    sig_2d = np.stack([np.real(h), np.imag(h)])
+    x_2d[sig] = sig_2d
+
+plt.clf()
+
+# MI between HF signals per LF phase bin
+mi = [] 
+for phase_bin in np.unique(phase_diff):
+    phase_sel = phase_diff == phase_bin
+    i = gcmi.gcmi_cc(x_2d['a'][:, phase_sel],
+                     x_2d['b'][:, phase_sel])
+    mi.append(i)
+plt.subplot(2, 1, 1)
+plt.plot(phase_bins[:-1], mi)
+plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.xlabel('LF phase difference (rad)')
+plt.ylabel('I(A; B)')
+
+# MI between HF signals per LF phase in each signal
+mi = np.full([n_bins, n_bins], np.nan) 
+for bin_a in np.unique(phase_diff):
+    for bin_b in np.unique(phase_diff):
+        phase_sel = (phase_dig['a'] == bin_a) & (phase_dig['b'] == bin_b)
+        i = gcmi.gcmi_cc(x_2d['a'][:, phase_sel],
+                         x_2d['b'][:, phase_sel])
+        mi[bin_a, bin_b] = i
+plt.subplot(2, 2, 3)
+plt.imshow(mi)
+plt.xlabel('Binned LF phase in B')
+plt.ylabel('Binned LF phase in A')
+plt.colorbar(label='I(A; B)')
+
+# Plot the phase difference as a function of phase in each signal
+plt.subplot(2, 2, 4)
+phase_bin_mat = np.tile(phase_bins, [len(phase_bins), 1])
+phase_diff_mat = phase_bin_mat - phase_bin_mat.T
+phase_diff_mat = (phase_diff_mat + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+plt.imshow(phase_diff_mat, cmap=plt.cm.twilight)
+plt.colorbar(label='Phase difference')
+plt.xlabel('Binned LF phase in B')
+plt.ylabel('Binned LF phase in A')
+
+plt.tight_layout()
+
+
+#########################################
+# Phase difference vs phase combination #
+#########################################
+
+# Explicitly compare the two models. Is it phase-difference that's important,
+# or phase combination?
+
+# Get the average HF power for each time-point
+# Compare 2 regressions
+#   sine-cosine transform of the phase difference
+#   sine-cosine transform of phase of each signal
+
+import statsmodels.api as sm
+from matplotlib import gridspec
+
+y = amp['b']
+y = np.squeeze(y)
+y = 10 * np.log10(y)
+
+# Fit a model based on phase-difference
+x_phasediff = phase['a'] - phase['b']
+x_phasediff = (x_phasediff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+x_phasediff = np.stack([np.sin(x_phasediff), # Sine-cosine transform
+                        np.cos(x_phasediff)]).T
+x_phasediff = sm.add_constant(x_phasediff)
+# Fit the model
+model_phasediff = sm.OLS(y, x_phasediff)
+results_phasediff = model_phasediff.fit()
+print(results_phasediff.summary())
+
+# Fit a model based on separate phase in each signal
+x_separate = np.stack([np.sin(phase['a']),
+                       np.cos(phase['a']),
+                       np.sin(phase['b']),
+                       np.cos(phase['b'])]).T
+x_separate = sm.add_constant(x_separate)
+# Fit the model
+model_separate = sm.OLS(y, x_separate)
+results_separate = model_separate.fit()
+print(results_separate.summary())
+
+# Fit a model based on combined phase in each signal
+x_combined = np.stack([np.sin(phase['a']),
+                       np.cos(phase['a']),
+                       np.sin(phase['b']),
+                       np.cos(phase['b']),
+                       np.sin(phase['a']) * np.sin(phase['b']),
+                       np.sin(phase['a']) * np.cos(phase['b']),
+                       np.cos(phase['a']) * np.sin(phase['b']),
+                       np.cos(phase['a']) * np.cos(phase['b']),
+                       ]).T
+x_combined = sm.add_constant(x_combined)
+# Fit the model
+model_combined = sm.OLS(y, x_combined)
+results_combined = model_combined.fit()
+print(results_combined.summary())
+
+# Plot the model fits
+fig = plt.figure(figsize=(6, 3))
+spec = gridspec.GridSpec(ncols=2, nrows=1,
+                         width_ratios=[5, 1])
+
+ax0 = fig.add_subplot(spec[0])
+ax0.plot(t, y, color='black', label='Empirical')
+ax0.plot(t, results_phasediff.fittedvalues,
+         color='darkorange',
+         label='Fits: Phase diff')
+ax0.plot(t, results_separate.fittedvalues,
+         color='seagreen',
+         label='Fits: Sep phase')
+ax0.plot(t, results_combined.fittedvalues, 
+         color='blueviolet',
+         label='Fits: Comb phase')
+plt.xlim(3, 4)
+#plt.ylim(-0.5, 5)
+plt.legend()
+plt.xlabel('Time (s)')
+plt.ylabel('HF amplitude')
+
+def likelihood_ratio_test(results_1, results_2):
+    if results_1.df_resid < results_2.df_resid:
+        results_1, results_2 = results_2, results_1
+    llf_1 = results_1.llf
+    llf_2 = results_2.llf
+    df_1 = results_1.df_resid 
+    df_2 = results_2.df_resid 
+    lrdf = (df_1 - df_2)
+    lrstat = -2 * (llf_1 - llf_2)
+    lr_pvalue = stats.chi2.sf(lrstat, df=lrdf)
+    return lr_pvalue
+
+print(f"p = {likelihood_ratio_test(results_phasediff, results_separate)}")
+print(f"p = {likelihood_ratio_test(results_separate, results_combined)}")
+
+# Which model has the lowest/best AIC and BIC?
+msg = f"""
+AIC
+Phase diff: {results_phasediff.aic}
+Separate  : {results_separate.aic}
+Combined  : {results_combined.aic}
+
+BIC
+Phase diff: {results_phasediff.bic}
+Separate  : {results_separate.bic}
+Combined  : {results_combined.bic}
+"""
+print(msg)
+
+models = [results_phasediff, results_separate, results_combined]
+labels = ['Diff', 'Sep', 'Comb']
+bic = np.array([r.bic for r in models])
+bic /= 1e5
+xpos = range(len(models))
+ax1 = fig.add_subplot(spec[1])
+ax1.plot(xpos, bic, 'o')
+plt.xticks(xpos, labels, rotation=45)
+plt.ylabel('BIC ($\\times 10 ^ 5$)')
+
+plt.tight_layout()
+
