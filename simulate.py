@@ -12,10 +12,13 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 from acoustics.generator import white, pink
 
+plot_dir = '../data/plots/simulated/illustrate/'
+
 def sim(dur=10, fs=1000, noise_amp=0.1,
         signal_leakage=0.0,
         common_noise_amp=0.1, common_alpha_amp=0.0,
-        gamma_lag_a=0.015, gamma_lag_a_to_b=0.015):
+        gamma_lag_a=0.015, gamma_lag_a_to_b=0.015,
+        plot=False):
     """
     Simulate phase-locked communication across frequency bands.
 
@@ -63,6 +66,13 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
                                low=alpha_freq[0], high=alpha_freq[1],
                                speed=0.1)
 
+    if plot: # Plot some example alpha activity
+        n_samps_to_plot = int(fs / 2)
+        plt.figure(figsize=(3, 2))
+        plt.plot(a_alpha_sig[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}alpha.png")
+
     # Make a high-gamma signal that depends on alpha amplitude
     # Following Jiang et al 2015, NeuroImage
     #    This implement a strict inhibitory role of alpha. Gamma just chugs
@@ -71,18 +81,51 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     a = 10 # Sigmoid slope
     c = 0.1 # Sigmoid "threshold"
     sigmoid = lambda x,a,c: 1 - (1 / (1 + np.exp(-a * (x - c))))
-    # a_gamma_osc = bp_noise(n_samps, *gamma_freq)
     a_gamma_osc = osc_var_freq(n_samps, fs, gamma_freq[0], gamma_freq[1], 0.5) - 0.5
+
+    if plot: # Plot some example gamma activity
+        plt.clf()
+        plt.plot(a_gamma_osc[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}gamma.png")
+
+        # Plot the sigmoid
+        x_sigspace = np.linspace(-1, 1, 100)
+        x_sigmoid = sigmoid(x_sigspace, a, c)
+        plt.clf()
+        plt.plot(x_sigspace, x_sigmoid)
+        plt.axis('on')
+        plt.xticks([-1, 0, 1])
+        plt.yticks([0, 1])
+        plt.xlabel('Alpha signal')
+        plt.ylabel('HF amplitude')
+        plt.tight_layout()
+        plt.savefig(f"{plot_dir}sigmoid.png")
+
+    # Multiply the gamma activity by the sigmoid
     a_gamma_sig = sigmoid(a_alpha_sig, a, c) * a_gamma_osc
     a_gamma_sig = np.roll(a_gamma_sig, # Gamma is at a lag from alpha
                           int(gamma_lag_a * fs)) 
     a_gamma_sig = a_gamma_sig * a_gamma_scale
+
+    if plot: # Plot the gamma activity with PAC
+        plt.clf()
+        plt.plot(a_gamma_sig[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}gamma_PAC.png")
 
     # Add noise
     noise = noise_amp * normalize(pink(n_samps))
 
     # Combine LF and HF components (and noise)
     s_a = a_alpha_sig + a_gamma_sig + noise
+
+    if plot: # Plot the resulting signal
+        plt.clf()
+        plt.plot(s_a[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}s_a_sender.png")
+
     
     ################################
     # Simulate a desination signal #
@@ -98,11 +141,23 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     b_gamma_inp = np.roll(a_gamma_sig, int(gamma_lag_a_to_b * fs)) # Gamma input
     b_gamma_sig = sigmoid(b_alpha_sig, a, c) * b_gamma_inp * b_gamma_scale
 
+    if plot: # Plot the gamma signal in the receiver
+        plt.clf()
+        plt.plot(b_gamma_sig[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}gamma_b.png")
+
     # Add noise
     noise = noise_amp * normalize(pink(n_samps))
 
     # Combine LF and HF components
     s_b = b_alpha_sig + b_gamma_sig + noise
+
+    if plot: # Plot the resulting signal
+        plt.clf()
+        plt.plot(s_b[:n_samps_to_plot])
+        plt.axis('off')
+        plt.savefig(f"{plot_dir}s_b_receiver.png")
 
     #############################
     # Add noise to both signals #
