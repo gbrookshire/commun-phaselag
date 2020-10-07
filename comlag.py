@@ -22,7 +22,14 @@ import itertools
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 from scipy import stats, optimize
+import statsmodels.api as sm
 
+
+def wrap_to_pi(x):
+    """ Wrap the input phase to the range [-pi, pi]
+    """
+    x = (x + np.pi) % (2 * np.pi) - np.pi
+    return x
 
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
@@ -712,6 +719,110 @@ def sine_ols(s_phase, s_amp):
 # # curve_fit is about 5 times slower
 # %timeit p_curve_fit = sine_curve_fit(x, y)
 # %timeit p_ols = sine_ols(x, y)
+
+
+def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
+    """
+    Compute CFC using model comparison between multiple models:
+        - Individual phase of each signal
+        - Phase-difference between the two signals
+        - Phase-combination (product) of two signals
+    """
+    s = {'a': s_a, 'b': s_b}
+
+    def fit_regression(x, y):
+        """ Helper function to fit a regression
+        """
+        x = sm.add_constant(x)
+        model = sm.OLS(y, x)
+        results = model.fit()
+        keep_fields = ['bic', 'rsquared_adj']
+        r = {field: getattr(results, field) for field in keep_fields}
+        return r
+
+    def regression_indiv(phase, amp_sig):
+        """ Regression analysis predicting amplitude from individual phases
+        """
+        x = np.stack([np.sin(phase['a']),
+                      np.cos(phase['a']),
+                      np.sin(phase['b']),
+                      np.cos(phase['b'])]).T
+        results = fit_regression(x, amp_sig)
+        return results
+
+    def regression_phasediff(phase, amp_sig):
+        """ Regression analysis going from individual phases and phase diff
+        """
+        phasediff = phase['a'] - phase['b']
+        phasediff = wrap_to_pi(phasediff)
+        x = np.stack([np.sin(phase['a']),
+                      np.cos(phase['a']),
+                      np.sin(phase['b']),
+                      np.cos(phase['b']),
+                      np.sin(phasediff),
+                      np.cos(phasediff)]).T
+        results = fit_regression(x, amp_sig)
+        return results
+
+    def regression_combined(phase, amp_sig):
+        """ Regression from individual phases and combined phase
+        """
+        x = np.stack([np.sin(phase['a']),
+                      np.cos(phase['a']),
+                      np.sin(phase['b']),
+                      np.cos(phase['b']),
+                      np.sin(phase['a']) * np.sin(phase['b']),
+                      np.sin(phase['a']) * np.cos(phase['b']),
+                      np.cos(phase['a']) * np.sin(phase['b']),
+                      np.cos(phase['a']) * np.cos(phase['b']),
+                      ]).T
+        results = fit_regression(x, amp_sig)
+        return results
+
+
+    # Get high frequency amplitude using a wavelet transform
+    amp = {}
+    amp['a'] = _wavelet_tfr(s_a, f_car, n_cycles, fs)
+    amp['b'] = _wavelet_tfr(s_b, f_car, n_cycles, fs)
+    # Append trials over time if data includes multiple trials
+    # amp.shape: (time, carrier freq)
+    for sig in 'ab':
+        if amp[sig].ndim == 3:
+            amp[sig] = np.concatenate(
+                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            axis=0)
+
+    # Set up an object for the results
+    # List of Phase-freq full of lists of Amp-freq full of dicts
+    # Each dict is for amplitude in each signal (a and b)
+    # Each of those will hold a dict of results for each regression analysis
+    results = []
+
+    # Run the models for each combination of phase-freq and amp-freq
+    for i_fm, fm in enumerate(f_mod):
+        print(fm)
+        # Compute the LF phase of each signal
+        filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+                    for sig in 'ab'}
+        phase = {sig: np.angle(hilbert(filt[sig], axis=0))
+                    for sig in 'ab'}
+        # Append trials over time if data includes multiple trials
+        for sig in 'ab':
+            phase[sig] = np.ravel(phase[sig], 'F')
+
+        results_fm = [] # Results for this fm
+        # Run the loop for each amplitude frequency
+        for i_fc,fc in enumerate(f_car):
+            sig = 'b' #FIXME Only look at HF power in the receiver
+            amp_sig = np.squeeze(amp[sig][:, i_fc])
+            res = {}
+            #res['indiv'] = regression_indiv(phase, amp_sig)
+            res['diff'] = regression_phasediff(phase, amp_sig)
+            res['combined'] = regression_combined(phase, amp_sig)
+            results_fm.append(res)
+        results.append(results_fm)
+
+    return results
 
 
 def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):

@@ -373,6 +373,48 @@ plt.savefig(f'{plot_dir}phase-diff_HF_MI.png', dpi=300)
 # Explicitly compare the two models. Is it phase-difference that's important,
 # or phase combination?
 
+phase_offset = -np.pi / 2
+
+# Plot the hypotheses
+phases = np.linspace(-np.pi, np.pi, 100)
+phase_mat_a = np.tile(phases, [len(phases), 1])
+phase_mat_b = phase_mat_a.copy().T
+
+
+def phase_mat_plot(z):
+    plt.contourf(phases, phases, z, 100)
+    plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+    plt.yticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+    plt.xlabel('Phase in sender')
+    plt.ylabel('Phase in receiver')
+
+plt.figure(figsize=(6.5, 2))
+
+# Plot what we'd find if excitability depends on individual phase in each
+plt.subplot(1, 3, 1)
+z_indiv = np.cos(phase_mat_b + phase_offset) \
+          + np.cos(phase_mat_a + phase_offset)
+phase_mat_plot(z_indiv)
+
+# Plot what we'd expect to find if the phase-difference per se is important
+plt.subplot(1, 3, 2)
+phase_mat_diff = phase_mat_b - phase_mat_a
+phase_mat_diff = (phase_mat_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+z_diff = np.cos(phase_mat_diff + phase_offset)
+phase_mat_plot(z_diff)
+
+# Plot what we'd find if the important thing is aligning excitable periods
+plt.subplot(1, 3, 3)
+cos_positive = lambda x: (1/2 * np.cos(x)) + 1/2 # only positive values
+z_comb = cos_positive(phase_mat_a + phase_offset) \
+         * cos_positive(phase_mat_b + phase_offset)
+phase_mat_plot(z_comb)
+
+plt.tight_layout()
+
+plt.savefig(f'{plot_dir}hypotheses.png', dpi=300)
+
+
 # Get the average HF power for each time-point
 # Compare 2 regressions
 #   sine-cosine transform of the phase difference
@@ -381,38 +423,50 @@ plt.savefig(f'{plot_dir}phase-diff_HF_MI.png', dpi=300)
 import statsmodels.api as sm
 from matplotlib import gridspec
 
+colors = ['seagreen', 'darkorange', 'blueviolet',
+          'deepskyblue', 'deeppink', 'slategrey'] 
+
 y = amp['b']
 y = np.squeeze(y)
-y = 10 * np.log10(y)
+#y = 10 * np.log10(y)
 
-# Fit a model based on phase-difference
-x_phasediff = phase['a'] - phase['b']
-x_phasediff = (x_phasediff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
-x_phasediff = np.stack([np.sin(x_phasediff), # Sine-cosine transform
-                        np.cos(x_phasediff)]).T
+# Fit a model based on phase in each signal individually
+x_indiv = np.stack([np.sin(phase['a']),
+                    np.cos(phase['a']),
+                    np.sin(phase['b']),
+                    np.cos(phase['b'])]).T
+x_indiv = sm.add_constant(x_indiv)
+# Fit the model
+model_indiv = sm.OLS(y, x_indiv)
+results_indiv = model_indiv.fit()
+print(results_indiv.summary())
+
+# Phase difference alone
+phasediff = phase['a'] - phase['b']
+phasediff = (phasediff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+x_phasediff = np.stack([np.sin(phasediff),
+                        np.cos(phasediff)]).T
 x_phasediff = sm.add_constant(x_phasediff)
 # Fit the model
 model_phasediff = sm.OLS(y, x_phasediff)
 results_phasediff = model_phasediff.fit()
 print(results_phasediff.summary())
 
-# Fit a model based on separate phase in each signal
-x_separate = np.stack([np.sin(phase['a']),
-                       np.cos(phase['a']),
-                       np.sin(phase['b']),
-                       np.cos(phase['b'])]).T
-x_separate = sm.add_constant(x_separate)
+# Phase-difference plus indiv phase
+x_phasediff_indiv = np.stack([np.sin(phase['a']), # Include terms for phase of each
+                              np.cos(phase['a']),
+                              np.sin(phase['b']),
+                              np.cos(phase['b']),
+                              np.sin(phasediff),
+                              np.cos(phasediff)]).T
+x_phasediff_indiv = sm.add_constant(x_phasediff_indiv)
 # Fit the model
-model_separate = sm.OLS(y, x_separate)
-results_separate = model_separate.fit()
-print(results_separate.summary())
+model_phasediff_indiv = sm.OLS(y, x_phasediff_indiv)
+results_phasediff_indiv = model_phasediff_indiv.fit()
+print(results_phasediff_indiv.summary())
 
-# Fit a model based on combined phase in each signal
-x_combined = np.stack([np.sin(phase['a']),
-                       np.cos(phase['a']),
-                       np.sin(phase['b']),
-                       np.cos(phase['b']),
-                       np.sin(phase['a']) * np.sin(phase['b']),
+# Combined phase alone
+x_combined = np.stack([np.sin(phase['a']) * np.sin(phase['b']),
                        np.sin(phase['a']) * np.cos(phase['b']),
                        np.cos(phase['a']) * np.sin(phase['b']),
                        np.cos(phase['a']) * np.cos(phase['b']),
@@ -423,27 +477,127 @@ model_combined = sm.OLS(y, x_combined)
 results_combined = model_combined.fit()
 print(results_combined.summary())
 
-# Plot the model fits
-fig = plt.figure(figsize=(6, 3))
-spec = gridspec.GridSpec(ncols=2, nrows=1,
-                         width_ratios=[5, 1])
+# Combined phase plus individual
+x_combined_indiv = np.stack([np.sin(phase['a']),
+                             np.cos(phase['a']),
+                             np.sin(phase['b']),
+                             np.cos(phase['b']),
+                             np.sin(phase['a']) * np.sin(phase['b']),
+                             np.sin(phase['a']) * np.cos(phase['b']),
+                             np.cos(phase['a']) * np.sin(phase['b']),
+                             np.cos(phase['a']) * np.cos(phase['b']),
+                             ]).T
+x_combined_indiv = sm.add_constant(x_combined_indiv)
+# Fit the model
+model_combined_indiv = sm.OLS(y, x_combined_indiv)
+results_combined_indiv = model_combined_indiv.fit()
+print(results_combined_indiv.summary())
 
-ax0 = fig.add_subplot(spec[0])
-ax0.plot(t, y, color='black', label='Empirical')
-ax0.plot(t, results_phasediff.fittedvalues,
-         color='darkorange',
-         label='Fits: Phase diff')
-ax0.plot(t, results_separate.fittedvalues,
-         color='seagreen',
-         label='Fits: Sep phase')
-ax0.plot(t, results_combined.fittedvalues, 
-         color='blueviolet',
-         label='Fits: Comb phase')
-plt.xlim(3, 4)
-#plt.ylim(-0.5, 5)
-plt.legend()
-plt.xlabel('Time (s)')
-plt.ylabel('HF amplitude')
+# Fit a model based on combined phase + phase-difference + individual
+x_total = np.stack([np.sin(phase['a']),
+                    np.cos(phase['a']),
+                    np.sin(phase['b']),
+                    np.cos(phase['b']),
+                    np.sin(phase['a']) * np.sin(phase['b']),
+                    np.sin(phase['a']) * np.cos(phase['b']),
+                    np.cos(phase['a']) * np.sin(phase['b']),
+                    np.cos(phase['a']) * np.cos(phase['b']),
+                    np.sin(phasediff),
+                    np.cos(phasediff)
+                    ]).T
+x_total = sm.add_constant(x_total)
+# Fit the model
+model_total = sm.OLS(y, x_total)
+results_total = model_total.fit()
+print(results_total.summary())
+
+# Plot each model's fit against the HG activity
+results = [results_indiv, results_phasediff, results_combined]
+labels = ['Individual', 'Phase diff', 'Combined']
+t_adj = t - 2
+for n,res,lab,col in zip(range(len(results)), results, labels, colors):
+    #plt.subplot(len(results), 1, n+1)
+    fig = plt.figure(figsize=(3, 1.5))
+    plt.plot(t_adj, y, color='black', label='Empirical')
+    plt.plot(t_adj, res.fittedvalues, color=col, label=f'Fits: {lab}')
+    plt.xlim(0, 3)
+    plt.ylim(-0.5, 5)
+    #plt.legend(loc='upper center')
+    plt.xlabel('Time (s)')
+    plt.ylabel('HF amplitude')
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(f'{plot_dir}model_comp_{lab}.png', dpi=300)
+    plt.close()
+
+# Plot the model fits
+# fig = plt.figure(figsize=(5, 2.5))
+# spec = gridspec.GridSpec(ncols=2, nrows=1,
+#                          width_ratios=[5, 1])
+# 
+# # Plot predicted HF time-courses all together
+# ax0 = fig.add_subplot(spec[0])
+# t_adj = t - 3.5
+# ax0.plot(t_adj, y, color='black', label='Empirical')
+# ax0.plot(t_adj, results_indiv.fittedvalues,
+#          color=colors[0],
+#          label='Individual phases')
+# ax0.plot(t_adj, results_phasediff.fittedvalues,
+#          color=colors[1],
+#          label='Phase diff model')
+# ax0.plot(t_adj, results_combined.fittedvalues, 
+#          color=colors[2],
+#          label='Phase combo model')
+# plt.xlim(0, 1.5)
+# plt.xticks([0, 0.5, 1, 1.5])
+# #plt.ylim(-50, 15)
+# plt.legend(loc='upper right')
+# plt.xlabel('Time (s)')
+# plt.ylabel('HF amplitude')
+# 
+# ax = plt.gca()
+# ax.spines['top'].set_visible(False)
+# ax.spines['right'].set_visible(False)
+
+models = [results_indiv,
+          results_phasediff, results_combined,
+          results_phasediff_indiv, results_combined_indiv, 
+          results_total]
+labels = ['Individual',
+          'Difference', 'Combined',
+          'Indiv + Diff', 'Indiv + Comb',
+          'Indiv + Diff + Comb']
+bic = np.array([r.bic for r in models])
+bic /= 1e5
+xpos = range(len(models))
+#ax1 = fig.add_subplot(spec[1])
+plt.figure(figsize=(3.5, 3))
+import matplotlib
+matplotlib.rcParams['hatch.linewidth'] = 4.0
+plt.clf()
+plt.bar(xpos[:3], bic[:3], color=colors[:3])
+# Draw faces
+plt.bar(xpos[3:], bic[3:], color=colors[0], zorder=0)
+# Draw hatches
+plt.bar(xpos[3:5], bic[3:5], color='none', edgecolor=colors[1:3],
+        hatch="//", zorder = 1)
+plt.bar(xpos[-1], bic[-1], color='none', edgecolor=colors[1],
+        hatch="//", zorder = 1)
+plt.bar(xpos[-1], bic[-1], color='none', edgecolor=colors[2],
+        hatch="/", zorder = 1)
+
+plt.xticks(xpos, labels, rotation=65)
+plt.xlim(-0.5, 5.5)
+plt.ylim(15, 23)
+plt.ylabel('BIC ($\\times 10 ^ 5$)')
+ax = plt.gca()
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+plt.tight_layout()
+plt.savefig(f'{plot_dir}model_comp.png', dpi=300)
 
 def likelihood_ratio_test(results_1, results_2):
     if results_1.df_resid < results_2.df_resid:
@@ -457,32 +611,60 @@ def likelihood_ratio_test(results_1, results_2):
     lr_pvalue = stats.chi2.sf(lrstat, df=lrdf)
     return lr_pvalue
 
-print(f"p = {likelihood_ratio_test(results_phasediff, results_separate)}")
-print(f"p = {likelihood_ratio_test(results_separate, results_combined)}")
+print(f"Diff vs Sep: p = {likelihood_ratio_test(results_phasediff, results_indiv)}")
+print(f"Sep vs Comb: p = {likelihood_ratio_test(results_indiv, results_combined)}")
+print(f"Diff vs Comb: p = {likelihood_ratio_test(results_phasediff, results_combined)}")
 
 # Which model has the lowest/best AIC and BIC?
 msg = f"""
 AIC
 Phase diff: {results_phasediff.aic}
-Separate  : {results_separate.aic}
+Separate  : {results_indiv.aic}
 Combined  : {results_combined.aic}
 
 BIC
 Phase diff: {results_phasediff.bic}
-Separate  : {results_separate.bic}
+Separate  : {results_indiv.bic}
 Combined  : {results_combined.bic}
 """
 print(msg)
 
-models = [results_phasediff, results_separate, results_combined]
-labels = ['Diff', 'Sep', 'Comb']
-bic = np.array([r.bic for r in models])
-bic /= 1e5
-xpos = range(len(models))
-ax1 = fig.add_subplot(spec[1])
-ax1.plot(xpos, bic, 'o')
-plt.xticks(xpos, labels, rotation=45)
-plt.ylabel('BIC ($\\times 10 ^ 5$)')
+
+results = comlag.cfc_modelcomp(s_a, s_b, fs, f_mod, f_car)
+# Plot the results
+stat = {}
+for summary_stat in ('bic', 'rsquared_adj'):
+    stat_summ = {}
+    for model_type in results[0][0].keys():
+        stat_mt = [] # Stats for this model type
+        for res_fm in results: # For each phase freq
+            stat_fm = [] # Stats for this model type and phase freq
+            for res_fc in res_fm: # For each amplitude freq
+                stat_fm.append(res_fc[model_type][summary_stat])
+            stat_mt.append(stat_fm)
+        stat_summ[model_type] = np.array(stat_mt)
+    stat[summary_stat] = stat_summ
+
+plt.clf()
+
+plt.subplot(1, 3, 1)
+plot_contour(stat['rsquared_adj']['diff'], levels=50)
+plt.title('$R^2$: Indiv + Diff')
+
+plt.subplot(1, 3, 2)
+plot_contour(stat['rsquared_adj']['combined'], levels=50)
+plt.title('$R^2$: Indiv + Comb')
+
+plt.subplot(1, 3, 3)
+comparison = stat['bic']['combined'] - stat['bic']['diff']
+plot_contour(comparison,
+                levels=np.linspace(-np.max(np.abs(comparison)),
+                                np.max(np.abs(comparison)),
+                                100),
+                cmap=plt.cm.RdBu_r)
+plt.title('BIC difference')
 
 plt.tight_layout()
+
+plt.savefig(f'{plot_dir}model_comp_comodulogram.png', dpi=300)
 
