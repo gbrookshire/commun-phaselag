@@ -41,6 +41,21 @@ f_mod = np.tile(f_mod_width, [2, 1]).T \
 f_car = np.arange(30, 200, 5)
 
 
+####################################
+# Plot a snippet of simulated data #
+####################################
+
+plt.figure(figsize=(6, 3))
+plt.plot(t, s_a, label='$s_a$: Sender')
+plt.plot(t, s_b, label='$s_b$: Receiver')
+plt.xlim(0, 1)
+plt.xlabel('Time (s)')
+plt.ylabel('Signal amplitude (mV or fT)')
+plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}timeseries_example.png')
+
+
 #####################################
 # Compute CFC using the Tort method #
 #####################################
