@@ -4,17 +4,22 @@ Run the analyses and generate plots.
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 
 import simulate
 import comlag
 
 plt.ion()
 
+plot_dir = '../data/plots/simulated/'
+
 #######################################
 # Test the analysis on simulated data #
 #######################################
 
-dur = 100
+np.random.seed(1)
+
+dur = 1000
 fs = 1000
 volume_conduction = 0.0
 t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
@@ -75,7 +80,7 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-plt.savefig(f'../data/plots/sim_tort.png')
+plt.savefig(f'{plot_dir}tort.png')
 
 
 ################################################
@@ -114,7 +119,7 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-plt.savefig(f'../data/plots/sim_fit_sine.png')
+plt.savefig(f'{plot_dir}fit_sine.png')
 
 
 ###########################################
@@ -160,7 +165,7 @@ plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
 plt.tight_layout()
-plt.savefig(f'../data/plots/sim_xspect.png')
+plt.savefig(f'{plot_dir}xspect.png')
 
 
 #########################################
@@ -229,7 +234,8 @@ for sig in 'ab':
     s_phase = np.angle(hilbert(s_filt, axis=0))
     phase[sig] = s_phase
 
-plt.clf()
+plt.figure(figsize=(5, 2))
+gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
 
 # Plot HF power as a function phase-difference.
 # On first glance, it looks pretty good.
@@ -242,7 +248,7 @@ amplitude_dist = np.ones(n_bins) # default is 1 to avoid log(0)
 for phase_bin in np.unique(phase_diff):
     amplitude_dist[phase_bin] = np.mean(amp['b'][phase_diff == phase_bin, i_fc])
 # Plot the result
-plt.subplot(2, 1, 1)
+ax0 = plt.subplot(gs[0])
 plt.plot(phase_bins[:-1], amplitude_dist)
 plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
 plt.xlabel('LF phase difference (rad)')
@@ -261,25 +267,21 @@ for bin_a in np.unique(phase_diff):
     for bin_b in np.unique(phase_diff):
         phase_sel = (phase_dig['a'] == bin_a) & (phase_dig['b'] == bin_b)
         amplitude_dist[bin_a, bin_b] = np.mean(amp['b'][phase_sel, i_fc])
-plt.subplot(2, 2, 3)
-plt.imshow(amplitude_dist)
-plt.xlabel('Binned LF phase in B')
-plt.ylabel('Binned LF phase in A')
-plt.colorbar(label='HF power in B')
-
-# Plot the phase difference as a function of phase in each signal. If phase
-# difference directly determines HF power, we should see a line along one of
-# the equal color values in this plot.
-plt.subplot(2, 2, 4)
-phase_bin_mat = np.tile(phase_bins, [len(phase_bins), 1])
-phase_diff_mat = phase_bin_mat - phase_bin_mat.T
-phase_diff_mat = (phase_diff_mat + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
-plt.imshow(phase_diff_mat, cmap=plt.cm.twilight)
-plt.colorbar(label='Phase difference')
-plt.xlabel('Binned LF phase in B')
-plt.ylabel('Binned LF phase in A')
+ax1 = plt.subplot(gs[1])
+# Mirror the results for -pi at +pi to make the plot prettier
+amp_dist = np.c_[amplitude_dist, amplitude_dist[:,:1]]
+amp_dist = np.r_[amp_dist, amp_dist[:1,:]]
+plt.contourf(phase_bins, phase_bins, amp_dist,
+             levels=np.linspace(0, amp_dist.max(), 100))
+plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.yticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.xlabel('Receiver LF phase')
+plt.ylabel('Sender LF phase')
+plt.colorbar(label='Receiver HF power', ticks=[0, 4])
 
 plt.tight_layout()
+
+plt.savefig(f'{plot_dir}phase-diff_HFPower.png', dpi=300)
 
 
 ######################################################################
@@ -307,7 +309,8 @@ for sig in 'ab':
     sig_2d = np.stack([np.real(h), np.imag(h)])
     x_2d[sig] = sig_2d
 
-plt.clf()
+plt.figure(figsize=(5, 2))
+gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
 
 # MI between HF signals per LF phase bin
 mi = [] 
@@ -316,11 +319,11 @@ for phase_bin in np.unique(phase_diff):
     i = gcmi.gcmi_cc(x_2d['a'][:, phase_sel],
                      x_2d['b'][:, phase_sel])
     mi.append(i)
-plt.subplot(2, 1, 1)
+ax0 = plt.subplot(gs[0])
 plt.plot(phase_bins[:-1], mi)
 plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
 plt.xlabel('LF phase difference (rad)')
-plt.ylabel('I(A; B)')
+plt.ylabel('I(Sender; Receiver)')
 
 # MI between HF signals per LF phase in each signal
 mi = np.full([n_bins, n_bins], np.nan) 
@@ -330,23 +333,22 @@ for bin_a in np.unique(phase_diff):
         i = gcmi.gcmi_cc(x_2d['a'][:, phase_sel],
                          x_2d['b'][:, phase_sel])
         mi[bin_a, bin_b] = i
-plt.subplot(2, 2, 3)
-plt.imshow(mi)
-plt.xlabel('Binned LF phase in B')
-plt.ylabel('Binned LF phase in A')
-plt.colorbar(label='I(A; B)')
+ax1 = plt.subplot(gs[1])
 
-# Plot the phase difference as a function of phase in each signal
-plt.subplot(2, 2, 4)
-phase_bin_mat = np.tile(phase_bins, [len(phase_bins), 1])
-phase_diff_mat = phase_bin_mat - phase_bin_mat.T
-phase_diff_mat = (phase_diff_mat + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
-plt.imshow(phase_diff_mat, cmap=plt.cm.twilight)
-plt.colorbar(label='Phase difference')
-plt.xlabel('Binned LF phase in B')
-plt.ylabel('Binned LF phase in A')
+# Mirror the results for -pi at +pi to make the plot prettier
+mi_to_plot = np.c_[mi, mi[:,:1]]
+mi_to_plot = np.r_[mi_to_plot, mi_to_plot[:1,:]]
+plt.contourf(phase_bins, phase_bins, mi_to_plot, 100)
+             #levels=np.linspace(0, mi_to_plot.max(), 100))
+plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.yticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
+plt.xlabel('Receiver LF phase')
+plt.ylabel('Sender LF phase')
+plt.colorbar(label='I(Sender; Receiver)', ticks=[0, 1.0])
 
 plt.tight_layout()
+
+plt.savefig(f'{plot_dir}phase-diff_HF_MI.png', dpi=300)
 
 
 #########################################
