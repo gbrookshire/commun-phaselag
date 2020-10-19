@@ -23,6 +23,7 @@ import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 from scipy import stats, optimize
 import statsmodels.api as sm
+import gcmi
 
 
 def wrap_to_pi(x):
@@ -719,6 +720,84 @@ def sine_ols(s_phase, s_amp):
 # # curve_fit is about 5 times slower
 # %timeit p_curve_fit = sine_curve_fit(x, y)
 # %timeit p_ols = sine_ols(x, y)
+
+def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=10, n_bins=18):
+    """
+    Compute CFC: HF mutual information as a function of LF phase lag.
+    """
+
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+    s = {'a': s_a, 'b': s_b}
+
+    # Initialize mutual information array: LF freq, HF freq, LF phase bin
+    mi = np.full([len(f_mod), len(f_car), n_bins],
+                 np.nan)
+
+    for i_fm, fm in enumerate(f_mod):
+        print(fm)
+        # Compute the LF phase-difference of each signal
+        filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+                    for sig in 'ab'}
+        phase = {sig: np.angle(hilbert(filt[sig], axis=0))
+                    for sig in 'ab'}
+        phase_diff = phase['a'] - phase['b']
+        phase_diff = wrap_to_pi(phase_diff)
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+        # Append trials over time if data includes multiple trials
+        phase_diff = np.ravel(phase_diff, 'F')
+
+        for i_fc, fc in enumerate(f_car):
+            # Filter the HF signals
+            filt = {sig: bp_filter(s[sig].T, fc-f_car_bw, fc+f_car_bw, fs, 2).T
+                        for sig in 'ab'}
+            # Make a 2D version of the signal with it's Hilbert transform
+            # This makes mutual information more informative
+            h = {sig: hilbert(filt[sig]) for sig in 'ab'}
+            sig_2d = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
+                        for sig in 'ab'}
+
+            # Compute MI for each phase bin
+            for phase_bin in np.unique(phase_diff):
+                phase_sel = phase_diff == phase_bin
+                i = gcmi.gcmi_cc(sig_2d['a'][:, phase_sel],
+                                 sig_2d['b'][:, phase_sel])
+                mi[i_fm, i_fc, phase_bin] = i
+
+    # Compute a phase-dependence index for each combination of LF and HF
+
+    # # Method 1:
+    # # Kullback-Leibler divergence of the distribution vs uniform
+    # # First, set any negative MI values to equal the minimum positive value
+    # # This is necesary for the logarithms to work
+    # mi[mi < 0] = mi[mi > 0].min()
+    # # Make sure each LF/HF pair sums to 1 so KL-divergence works
+    # mi_sums = np.sum(mi, 2)
+    # mi_sums = np.swapaxes(np.swapaxes(np.tile(mi_sums, # Make dims the same
+    #                                           [n_bins, 1, 1]),
+    #                                   0, 1),
+    #                       1, 2)
+    # mi /= mi_sums
+    # d_kl = np.sum(mi * np.log(mi * n_bins), 2)
+    # mi_comod = d_kl / np.log(n_bins)
+
+    # # Method 2:
+    # # Find the power of a sine wave fit to the MI by phase-lag
+    # sine_amp = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
+
+    # Method 3:
+    # Find the R^2 of a sine wave fit to the MI by phase-lag
+    x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
+    x = sm.add_constant(x)
+    mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
+    for i_fm in range(len(f_mod)):
+        for i_fc in range(len(f_car)):
+            y = mi[i_fm, i_fc, :]
+            model = sm.OLS(y, x)
+            results = model.fit()
+            rsq = results.rsquared_adj
+            mi_comod[i_fm, i_fc] = rsq
+
+    return mi, mi_comod
 
 
 def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):

@@ -23,7 +23,7 @@ dur = 1000
 fs = 1000
 volume_conduction = 0.0
 t, s_a, s_b = simulate.sim(dur=dur, fs=fs,
-                           noise_amp=0.5,
+                           noise_amp=1.0,
                            signal_leakage=volume_conduction,
                            gamma_lag_a=0.010,
                            gamma_lag_a_to_b=0.015,
@@ -189,9 +189,10 @@ plt.savefig(f'{plot_dir}xspect.png')
 
 fits, rsq = comlag.cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car)
 
-def plot_contour(x, **kwargs):
+def plot_contour(x, colorbar_label='', **kwargs):
     plt.contourf(f_mod_centers, f_car, x.T, **kwargs)
-    plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb.ax.set_ylabel(colorbar_label)
     plt.ylabel('Amp freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
 
@@ -214,6 +215,15 @@ plot_contour(fits['2d_cont'][:, :, 0], levels=50)
 plt.title('$\\kappa$: combined (controlled)')
 
 plt.tight_layout()
+
+
+###################################################################
+# Compute MI between HF time-series as a function of LF phase lag #
+###################################################################
+
+mi, mi_comod = comlag.cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car)
+plot_contour(mi_comod, colorbar_label='Adj. $R^2$')
+
 
 
 ##########################
