@@ -721,7 +721,7 @@ def sine_ols(s_phase, s_amp):
 # %timeit p_curve_fit = sine_curve_fit(x, y)
 # %timeit p_ols = sine_ols(x, y)
 
-def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=10, n_bins=18):
+def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
     """
     Compute CFC: HF mutual information as a function of LF phase lag.
     """
@@ -748,7 +748,10 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=10, n_bins=18):
 
         for i_fc, fc in enumerate(f_car):
             # Filter the HF signals
-            filt = {sig: bp_filter(s[sig].T, fc-f_car_bw, fc+f_car_bw, fs, 2).T
+            filt = {sig: bp_filter(s[sig].T,
+                                   fc - (f_car_bw / 2),
+                                   fc + (f_car_bw / 2),
+                                   fs, 2).T
                         for sig in 'ab'}
             # Make a 2D version of the signal with it's Hilbert transform
             # This makes mutual information more informative
@@ -782,19 +785,19 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=10, n_bins=18):
 
     # # Method 2:
     # # Find the power of a sine wave fit to the MI by phase-lag
-    # sine_amp = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
+    # mi_comod = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
 
     # Method 3:
     # Find the R^2 of a sine wave fit to the MI by phase-lag
     x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
-    x = sm.add_constant(x)
     mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
     for i_fm in range(len(f_mod)):
         for i_fc in range(len(f_car)):
             y = mi[i_fm, i_fc, :]
+            y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
             model = sm.OLS(y, x)
             results = model.fit()
-            rsq = results.rsquared_adj
+            rsq = results.rsquared
             mi_comod[i_fm, i_fc] = rsq
 
     return mi, mi_comod
