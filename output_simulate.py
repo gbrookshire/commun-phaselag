@@ -223,7 +223,7 @@ plt.tight_layout()
 
 mi, mi_comod = comlag.cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car)
 plot_contour(mi_comod, colorbar_label='Adj. $R^2$')
-
+plt.savefig(f'{plot_dir}phase-diff_mutual-info.png')
 
 
 ##########################
