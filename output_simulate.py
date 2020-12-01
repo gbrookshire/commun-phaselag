@@ -678,3 +678,72 @@ plt.tight_layout()
 
 plt.savefig(f'{plot_dir}model_comp_comodulogram.png', dpi=300)
 
+
+#################################################
+# Test the role of cross-talk in the MI measure #
+#################################################
+# assume theta-gamma PAC in sender and receiver - gamma independent in sender
+# and receiver. Now mix e.g. by 20%. Does supprious info-transfer arise? 
+
+# Which frequencies to calculate phase for
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 10)
+f_mod_width = f_mod_centers / 6
+f_mod = np.tile(f_mod_width, [2, 1]).T \
+            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+            + np.tile(f_mod_centers, [2, 1]).T
+
+# Which frequencies to calculate power for
+f_car = np.arange(20, 100, 5)
+
+# Parameters for the simulated signals
+sim_params = dict(dur=100, fs=1000,
+                  shared_gamma=True,
+                  noise_amp=0.01, common_noise_amp=0.0)
+
+# Parameters for the MI phase-lag analysis
+mi_params = dict(fs=sim_params['fs'],
+                 f_mod=f_mod, f_car=f_car,
+                 f_car_bw=10, n_bins=8)
+
+def mi_fnc(s_a, s_b):
+    """ Helper function
+    """
+    mi, mi_comod, counts = comlag.cfc_phaselag_mutualinfo(
+                                            s_a, s_b,
+                                            **mi_params)
+    d = dict(mi=mi, mi_comod=mi_comod, counts=counts)
+    return d
+
+def plot_contour(x, **kwargs):
+    plt.contourf(f_mod_centers, f_car, x.T,
+                 levels=np.linspace(0, 1, 50),
+                 **kwargs)
+    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb.ax.set_ylabel('$R^2$')
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+
+
+# Simulate signals with no cross-talk
+t, s_a, s_b = sim(signal_leakage=0, **sim_params)
+res_no_crosstalk = mi_fnc(s_a, s_b)
+
+# Simulate signals with a lot of cross-talk
+t, s_a, s_b = sim(signal_leakage=0.5, **sim_params)
+res_crosstalk = mi_fnc(s_a, s_b)
+
+# Plot it
+plt.figure(figsize=(4, 6))
+
+plt.subplot(2, 1, 1)
+plot_contour(res_no_crosstalk['mi_comod'])
+plt.title('No cross-talk')
+
+plt.subplot(2, 1, 2)
+plot_contour(res_crosstalk['mi_comod'])
+plt.title('Includes cross-talk')
+
+plt.tight_layout()
+
+plt.savefig(
+plt.savefig(f'{plot_dir}mi_comod_cross-talk.png', dpi=300)
