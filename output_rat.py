@@ -265,3 +265,77 @@ for band_name, band_lims in freq_bands.items():
     plt.savefig(f"{plot_dir}highfreq_crossMI_{band_name}.png")
 
 
+####################################
+# Look at phase-amplitude coupling #
+####################################
+
+# Which frequencies to calculate phase for
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 10)
+f_mod_width = f_mod_centers / 6
+##f_mod_centers = np.logspace(np.log10(4), np.log10(20), 5)
+##f_mod_width = f_mod_centers / 4
+f_mod = np.tile(f_mod_width, [2, 1]).T \
+            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+            + np.tile(f_mod_centers, [2, 1]).T
+
+# Which frequencies to calculate power for
+f_car = np.arange(20, 100, 5)
+##f_car = np.arange(20, 100, 10)
+
+f_car_cycles = 4 # Number of cycles in the HF wavelet transform
+n_jobs = 3 # How many parallel jobs to run
+nfft = 2 ** 11 # FFT length for CFC
+
+def cfc_fnc(fn):
+    """ Helper function for parallel computation
+    """
+    d = loadmat(data_dir + fn)
+    d['Fs'] = np.squeeze(d['Fs'])
+    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    pac_out = [comlag.cfc_xspect(sig, sig, fs=d['Fs'],
+                                 nfft=nfft, n_overlap=nfft/2,
+                                 f_car=f_car, n_cycles=f_car_cycles)
+                    for sig in s]
+    return pac_out
+
+pac_out = Parallel(n_jobs=n_jobs)(delayed(cfc_fnc)(fn) for fn in fnames)
+freqs = np.squeeze(pac_out[0][0][1]) # Get the vector of freqs from one run
+pac_0 = [p[0][0] for p in pac_out] # Get PAC for each signal
+pac_1 = [p[1][0] for p in pac_out]
+
+# Save the data
+fname = f"{data_dir}pac/nfft{nfft}_ncyc{f_car_cycles}.npz"
+np.savez(fname, freqs=freqs, pac_0=pac_0, pac_1=pac_1)
+
+def plot_contour(x, colorbar_label='', **kwargs):
+    plt.contourf(freqs, f_car, x.T,
+                 **kwargs)
+    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb.ax.set_ylabel(colorbar_label)
+    plt.ylabel('Amp freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+    plt.xlim(0, 20)
+
+# Which signal to plot
+n_sig = 0
+if n_sig == 0:
+    pac = pac_0
+elif n_sig == 1:
+    pac = pac_1
+
+for n,fn in enumerate(fnames):
+    plt.subplot(3, 3, n + 1)
+    plot_contour(np.squeeze(pac[n]), colorbar_label='Amplitude')
+    plt.title(re.search('Rat[0-9]+', fn).group())
+# Plot the average
+plt.subplot(3, 3, len(fnames) + 1)
+avg = np.squeeze(np.mean(np.array(pac), axis=0))
+plot_contour(avg, colorbar_label='Amplitude')
+plt.title('Average')
+
+plt.tight_layout()
+
+fname = f"pac_sig{n_sig}_nfft{nfft}_ncyc{f_car_cycles}"
+plt.savefig(f'{plot_dir}{fname}.png')
+
+!notify-send "Analysis finished"
