@@ -181,14 +181,56 @@ plt.tight_layout()
 plt.savefig(f'{plot_dir}phase-diff_hist_{fn_details}.png')
 
 
+#### Plot MI as a function of phase-diff
+
 # Which phase freq and amp freq to choose
-i_f_mod = 5
-i_f_car = 11
-i_rat = 5
+lf_range = [7, 10]
+hf_range = [60, 90]
+lf_freq_sel = (lf_range[0] < f_mod_centers) & (f_mod_centers < lf_range[1])
+hf_freq_sel = (hf_range[0] < f_car) & (f_car < hf_range[1])
+
+phase_bins = np.linspace(-np.pi, np.pi, n_phase_bins + 1)[:-1]
 
 # Extract mutual information as a function of phase difference
-x = mi_full[i_rat][i_f_mod, i_f_car]
-plt.plot(x)
+fig, axs = plt.subplots(3, 3)
+for n in range(len(fnames)):
+    i_ax = [n // 3, n % 3]
+    ax1 = axs[i_ax[0], i_ax[1]]
+
+    # Plot average MI
+    x = mi_full[n, ...] # Select this animal
+    x = np.mean(x[lf_freq_sel, ...], 0) # Select the LF freqs
+    x = np.mean(x[hf_freq_sel, ...], 0) # Select the HF freqs
+
+    # Plot the number of observations per bin
+    c = np.mean(counts[n, lf_freq_sel, :], 0)
+    c /= c.max() # Normalize to amplitude 1
+
+    color = 'tab:blue'
+    ax1.set_xlabel('Phase diff (rad)')
+    ax1.set_ylabel('MI', color=color)
+    ax1.plot(phase_bins, x, color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.set_xticks([-np.pi, 0, np.pi])
+    ax1.set_xticklabels(['$-\pi$', 0, '$\pi$'])
+    ax1.set_xlim([-np.pi, np.pi])
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    color = 'tab:red'
+    ax2.set_ylabel('Hist (norm)', color=color)
+    ax2.plot(phase_bins, c, color=color)
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    plt.title(re.search('Rat[0-9]+', fnames[n]).group())
+plt.tight_layout()
+
+# Delete the empty plots
+for k in [1,2]:
+    axs[-1, -k].axis('off')
+
+fn_details = f'lf{lf_range}_hf{hf_range}_nbins{n_phase_bins}'
+fn_details = fn_details.replace('[', '_').replace(']', '').replace(', ', '-')
+plt.savefig(f'{plot_dir}phase-diff_mi_{fn_details}.png')
 
 
 ##################################################################
