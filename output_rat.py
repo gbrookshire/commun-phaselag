@@ -17,6 +17,31 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
 
+################################################
+# Plot the PSD for each rat and recording site #
+################################################
+labels = ['CA3', 'CA1']
+nfft = 2 ** 10
+plt.clf()
+for n,fn in enumerate(fnames):
+    plt.subplot(3, 3, n + 1)
+    d = loadmat(data_dir + fn)
+    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    for sig, lab in zip(s, labels):
+        f, y = signal.welch(sig, nperseg=nfft, noverlap=nfft / 2,
+                            fs=d['Fs'][0][0])
+        plt.loglog(f, y, label=lab)
+    plt.xlim(1, 200)
+    plt.xticks([1, 10, 100])
+    plt.title(re.search('Rat[0-9]+', fn).group())
+
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Amplitude')
+plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}spectra.png')
+
+
 #################################################
 # Check the distribution of LF phase difference #
 #################################################
