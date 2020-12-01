@@ -114,6 +114,15 @@ def mi_fnc(fn):
 mi_out = Parallel(n_jobs=n_jobs)(delayed(mi_fnc)(fn) for fn in fnames)
 mi_full, mi_comod = zip(*mi_out)
 
+# Save the data
+np.savez(save_fname, mi_full=mi_full, mi_comod=mi_comod, counts=counts)
+!notify-send "Analysis finished"
+
+# Load the saved data
+saved_data = np.load(save_fname)
+mi_full = saved_data.get('mi_full')
+mi_comod = saved_data.get('mi_comod')
+counts = saved_data.get('counts')
 def plot_contour(x, colorbar_label='', **kwargs):
     plt.contourf(f_mod_centers, f_car, x.T,
                  levels=np.linspace(0, 1, 50),
