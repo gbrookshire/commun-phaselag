@@ -104,15 +104,18 @@ def mi_fnc(fn):
     print(f'n_phase_bins: {n_phase_bins}')
     d = loadmat(data_dir + fn)
     s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
-    mi_i, mi_comod_i = comlag.cfc_phaselag_mutualinfo(
+    mi_i, mi_comod_i, counts_i = comlag.cfc_phaselag_mutualinfo(
                                 s[0], s[1],
                                 d['Fs'], f_mod, f_car,
                                 f_car_bw=f_car_bw,
                                 n_bins=n_phase_bins)
-    return (mi_i, mi_comod_i)
+    return (mi_i, mi_comod_i, counts_i)
 
 mi_out = Parallel(n_jobs=n_jobs)(delayed(mi_fnc)(fn) for fn in fnames)
-mi_full, mi_comod = zip(*mi_out)
+mi_full, mi_comod, counts = zip(*mi_out)
+mi_full = np.array(mi_full)
+mi_comod = np.array(mi_comod)
+counts = np.array(counts)
 
 # Save the data
 np.savez(save_fname, mi_full=mi_full, mi_comod=mi_comod, counts=counts)
@@ -123,6 +126,8 @@ saved_data = np.load(save_fname)
 mi_full = saved_data.get('mi_full')
 mi_comod = saved_data.get('mi_comod')
 counts = saved_data.get('counts')
+
+# Plot the MI comodulogram
 def plot_contour(x, colorbar_label='', **kwargs):
     plt.contourf(f_mod_centers, f_car, x.T,
                  levels=np.linspace(0, 1, 50),
@@ -147,12 +152,34 @@ plt.tight_layout()
 fn_details = f'bw{int(f_car_bw)}_nbins{n_phase_bins}'
 plt.savefig(f'{plot_dir}phase-diff_mi_by_animal_{fn_details}.png')
 
-!notify-send "Analysis finished"
+# Plot the number of data points per phase bin
+plt.clf()
+colors = plt.cm.plasma(np.linspace(0, 1, len(f_mod_centers)))
+phase_bins = np.linspace(-np.pi, np.pi, n_phase_bins)
+for n,fn in enumerate(fnames):
+    plt.subplot(3, 3, n + 1)
+    for i_fm in range(len(f_mod_centers)):
+        plt.plot(phase_bins, counts[n, i_fm, :],
+                 color=colors[i_fm],
+                 label=f_mod_centers[i_fm])
+    plt.title(re.search('Rat[0-9]+', fn).group())
+    plt.xlabel('Phase (rad)')
+    plt.ylabel('Count')
+    plt.ylim(0, plt.ylim()[1])
+# Make a legend
+plt.subplot(3, 3, n + 2)
+for i_fm, fm in enumerate(f_mod_centers):
+    plt.plot(f_mod[i_fm], [i_fm, i_fm],
+             '-', color=colors[i_fm], linewidth=5)
+plt.yticks([])
+plt.xticks([0, 10, 20])
+plt.xlabel('Frequency (Hz)')
+plt.title('Legend')
 
+plt.tight_layout()
 
-# For Rat47, we see what looks like a nice blob at phase frequency = 9 Hz,
-# "amplitude" frequency = 75 Hz. Let's plot MI as a function of
-# phase-difference to see if it's sinusoidal.
+plt.savefig(f'{plot_dir}phase-diff_hist_{fn_details}.png')
+
 
 # Which phase freq and amp freq to choose
 i_f_mod = 5
