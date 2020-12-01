@@ -6,6 +6,8 @@ import re
 from joblib import Parallel, delayed
 import comlag
 
+plt.ion()
+
 data_dir = '../data/RatData/'
 plot_dir = data_dir + 'plots/'
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
@@ -76,16 +78,6 @@ because we essentially only have data from one phase difference.
 # Compute MI between HF time-series as a function of LF phase lag #
 ###################################################################
 
-#TODO
-"""
-Does it make more sense to take the amplitude of the sine-wave, or the goodness
-of fit? I think it makes more sense to take the goodness of fit, since
-amplitude could depend on the amplitude of the HF oscillations. We could have a
-perfect sinusoidal pattern of PAC, but if there's very low amplitude of the HF
-oscillations, then that sine fit could have lower amplitude than noise in other
-frequencies with a higher HF amplitude.
-"""
-
 # Which frequencies to calculate phase for
 f_mod_centers = np.logspace(np.log10(4), np.log10(20), 10)
 f_mod_width = f_mod_centers / 6
@@ -99,7 +91,9 @@ f_mod = np.tile(f_mod_width, [2, 1]).T \
 f_car = np.arange(20, 100, 5)
 ##f_car = np.arange(20, 100, 10)
 
-f_car_bw = 5 # Bandwidth of the HF bandpass filter
+save_fname = f"{data_dir}mi_comod/bw{int(f_car_bw)}_nbins{n_phase_bins}.npz"
+
+f_car_bw = 10 # Bandwidth of the HF bandpass filter
 n_phase_bins = 8 # Number of bins for the phase-difference
 n_jobs = 3 # How many parallel jobs to run
 
