@@ -18,6 +18,7 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
         signal_leakage=0.0,
         common_noise_amp=0.1, common_alpha_amp=0.0,
         gamma_lag_a=0.015, gamma_lag_a_to_b=0.015,
+        shared_gamma=True,
         plot=False):
     """
     Simulate phase-locked communication across frequency bands.
@@ -40,6 +41,9 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
         Duration by which gamma activity is lagged from the LF trough w/in s_a
     gamma_lag_a_to_b : float
         Duration by which gamma activity in s_a is lagged in s_b
+    shared_gamma : bool
+        Is the gamma signal shared between regions (True) or does each region
+        have an independently-generated gamma signal (False)?
 
     Returns
     -------
@@ -137,9 +141,16 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
 
     # Gamma activity in s_a triggers activity in s_b when are b is in an
     # excitable state. Low alpha leads to excitable state
+    if shared_gamma: # Propagate the gamma from the sender
+        b_gamma_sig = np.roll(a_gamma_sig, int(gamma_lag_a_to_b * fs))
+    else: # Generate independent gamma
+        b_gamma_osc = osc_var_freq(n_samps, fs,
+                                   gamma_freq[0], gamma_freq[1],
+                                   0.5) - 0.5
+        b_gamma_sig = np.roll(b_gamma_osc, int(gamma_lag_a_to_b * fs)) # Gamma input
+
     b_gamma_scale = 1.0
-    b_gamma_inp = np.roll(a_gamma_sig, int(gamma_lag_a_to_b * fs)) # Gamma input
-    b_gamma_sig = sigmoid(b_alpha_sig, a, c) * b_gamma_inp * b_gamma_scale
+    b_gamma_sig = sigmoid(b_alpha_sig, a, c) * b_gamma_sig * b_gamma_scale
 
     if plot: # Plot the gamma signal in the receiver
         plt.clf()
