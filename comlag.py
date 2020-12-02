@@ -93,7 +93,7 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
 
     # Only keep the meaningful frequencies
     n_keep_freqs = int(np.floor(nfft / 2))
-    cfc_data = cfc_data[:n_keep_freqs, :]
+    cfc_data = cfc_data[:n_keep_freqs, ...]
 
     # Compute the modulation frequencies
     f_mod = np.arange(nfft - 1) * fs / nfft
@@ -730,8 +730,9 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
     s = {'a': s_a, 'b': s_b}
 
     # Initialize mutual information array: LF freq, HF freq, LF phase bin
-    mi = np.full([len(f_mod), len(f_car), n_bins],
-                 np.nan)
+    mi = np.full([len(f_mod), len(f_car), n_bins], np.nan)
+    # Initialize array to hold the number of observations in each bin
+    counts = np.full([len(f_mod), n_bins], np.nan)
 
     for i_fm, fm in enumerate(f_mod):
         print(fm)
@@ -765,6 +766,9 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
                 i = gcmi.gcmi_cc(sig_2d['a'][:, phase_sel],
                                  sig_2d['b'][:, phase_sel])
                 mi[i_fm, i_fc, phase_bin] = i
+                # Store the count of observations per phase bin
+                if i_fc == 0:
+                    counts[i_fm, phase_bin] = np.sum(phase_sel)
 
     # Compute a phase-dependence index for each combination of LF and HF
 
@@ -783,24 +787,24 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
     # d_kl = np.sum(mi * np.log(mi * n_bins), 2)
     # mi_comod = d_kl / np.log(n_bins)
 
-    # # Method 2:
-    # # Find the power of a sine wave fit to the MI by phase-lag
-    # mi_comod = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
+    # Method 2:
+    # Find the power of a sine wave fit to the MI by phase-lag
+    mi_comod = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
 
-    # Method 3:
-    # Find the R^2 of a sine wave fit to the MI by phase-lag
-    x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
-    mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
-    for i_fm in range(len(f_mod)):
-        for i_fc in range(len(f_car)):
-            y = mi[i_fm, i_fc, :]
-            y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
-            model = sm.OLS(y, x)
-            results = model.fit()
-            rsq = results.rsquared
-            mi_comod[i_fm, i_fc] = rsq
+    # # Method 3:
+    # # Find the R^2 of a sine wave fit to the MI by phase-lag
+    # x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
+    # mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
+    # for i_fm in range(len(f_mod)):
+    #     for i_fc in range(len(f_car)):
+    #         y = mi[i_fm, i_fc, :]
+    #         y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
+    #         model = sm.OLS(y, x)
+    #         results = model.fit()
+    #         rsq = results.rsquared
+    #         mi_comod[i_fm, i_fc] = rsq
 
-    return mi, mi_comod
+    return mi, mi_comod, counts
 
 
 def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
