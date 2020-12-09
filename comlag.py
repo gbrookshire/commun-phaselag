@@ -721,7 +721,8 @@ def sine_ols(s_phase, s_amp):
 # %timeit p_curve_fit = sine_curve_fit(x, y)
 # %timeit p_ols = sine_ols(x, y)
 
-def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
+def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
+                            f_car_bw=5, n_bins=18, method='sine fit inx'):
     """
     Compute CFC: HF mutual information as a function of LF phase lag.
     """
@@ -772,37 +773,71 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car, f_car_bw=5, n_bins=18):
 
     # Compute a phase-dependence index for each combination of LF and HF
 
-    # # Method 1:
-    # # Kullback-Leibler divergence of the distribution vs uniform
-    # # First, set any negative MI values to equal the minimum positive value
-    # # This is necesary for the logarithms to work
-    # mi[mi < 0] = mi[mi > 0].min()
-    # # Make sure each LF/HF pair sums to 1 so KL-divergence works
-    # mi_sums = np.sum(mi, 2)
-    # mi_sums = np.swapaxes(np.swapaxes(np.tile(mi_sums, # Make dims the same
-    #                                           [n_bins, 1, 1]),
-    #                                   0, 1),
-    #                       1, 2)
-    # mi /= mi_sums
-    # d_kl = np.sum(mi * np.log(mi * n_bins), 2)
-    # mi_comod = d_kl / np.log(n_bins)
+    if method == 'tort':
+        # Kullback-Leibler divergence of the distribution vs uniform
+        # Unitless
+        # First, set any negative MI values to equal the minimum positive value
+        # This is necesary for the logarithms to work
+        mi[mi < 0] = mi[mi > 0].min()
+        # Make sure each LF/HF pair sums to 1 so KL-divergence works
+        mi_sums = np.sum(mi, 2)
+        mi_sums = np.swapaxes(np.swapaxes(np.tile(mi_sums, # Make dims the same
+                                                [n_bins, 1, 1]),
+                                        0, 1),
+                            1, 2)
+        mi /= mi_sums
+        d_kl = np.sum(mi * np.log(mi * n_bins), 2)
+        mi_comod = d_kl / np.log(n_bins)
 
-    # Method 2:
-    # Find the power of a sine wave fit to the MI by phase-lag
-    mi_comod = np.abs(np.fft.fft(mi)[:, :, 1]) ** 2
+    elif method == 'sine psd':
+        # PSD of a sine wave fit to the MI as a function of phase-difference
+        # Units: bits^2 / Hz
+        sine_psd = (np.abs(np.fft.fft(mi)) ** 2) / n_bins
+        mi_comod = sine_psd[..., 1] # Take the freq matching the whole signal
 
-    # # Method 3:
-    # # Find the R^2 of a sine wave fit to the MI by phase-lag
-    # x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
-    # mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
-    # for i_fm in range(len(f_mod)):
-    #     for i_fc in range(len(f_car)):
-    #         y = mi[i_fm, i_fc, :]
-    #         y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
-    #         model = sm.OLS(y, x)
-    #         results = model.fit()
-    #         rsq = results.rsquared
-    #         mi_comod[i_fm, i_fc] = rsq
+    elif method == 'sine amp':
+        # Amplitude of a sine wave fit, normalized by sequence length
+        # Units: bits / Hz
+        sine_amp = np.abs(np.fft.fft(mi)) / n_bins
+        mi_comod = sine_amp[..., 1]
+
+    elif method == 'sine fit inx':
+        """
+        Adjusted PSD of a sine-fit.
+
+        Pros
+        - Bigger DC offset means smaller mod inx
+        - Good behavior when osc is whole signal
+
+        Cons
+        - Noisier signals with low DC can have bigger mod inx
+        """
+
+        y = np.abs(np.fft.fft(mi)) # Amp spect
+        y = y[..., :(n_bins // 2)] # Only take positive frequencies
+        y[..., 0] /= 2 # Account for the fact that non-DC coefs are doubled in DFTs 
+        # Proportion of the spectrum accounted for by this freq
+        y = y / np.reshape(np.sum(y, axis=-1),
+                           list(y.shape[:2]) + [1])
+        mod_inx = y[..., 1] / np.sum(np.delete(y, 1, axis=-1), axis=-1)
+        mi_comod = mod_inx
+
+
+    elif method == 'rsquared':
+        # Find the R^2 of a sine wave fit to the MI by phase-lag
+        x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
+        mi_comod = np.full([len(f_mod), len(f_car)], np.nan)
+        for i_fm in range(len(f_mod)):
+            for i_fc in range(len(f_car)):
+                y = mi[i_fm, i_fc, :]
+                y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
+                model = sm.OLS(y, x)
+                results = model.fit()
+                rsq = results.rsquared
+                mi_comod[i_fm, i_fc] = rsq
+
+    else:
+        raise(Exception(f'method {method} not recognized'))
 
     return mi, mi_comod, counts
 
