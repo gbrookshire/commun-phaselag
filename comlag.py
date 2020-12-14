@@ -836,6 +836,15 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
                 rsq = results.rsquared
                 mi_comod[i_fm, i_fc] = rsq
 
+
+    elif method == 'vector':
+        # Look at mean vector length. Inspired by the ITPC
+        theta = np.exp(1j * phase_bins[:-1])
+        phase_vectors = mi * theta
+        mean_vector_length = np.abs(np.mean(phase_vectors, axis=-1))
+        mi_comod = mean_vector_length
+        
+
     else:
         raise(Exception(f'method {method} not recognized'))
 
