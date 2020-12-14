@@ -722,7 +722,7 @@ def sine_ols(s_phase, s_amp):
 # %timeit p_ols = sine_ols(x, y)
 
 def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
-                            f_car_bw=5, n_bins=18, method='sine fit inx'):
+                            f_car_bw=5, n_bins=18, method='sine fit adj'):
     """
     Compute CFC: HF mutual information as a function of LF phase lag.
     """
@@ -801,7 +801,7 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
         sine_amp = np.abs(np.fft.fft(mi)) / n_bins
         mi_comod = sine_amp[..., 1]
 
-    elif method == 'sine fit inx':
+    elif method == 'sine fit adj':
         """
         Adjusted PSD of a sine-fit.
 
