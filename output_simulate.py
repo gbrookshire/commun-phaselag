@@ -685,15 +685,33 @@ plt.savefig(f'{plot_dir}model_comp_comodulogram.png', dpi=300)
 # assume theta-gamma PAC in sender and receiver - gamma independent in sender
 # and receiver. Now mix e.g. by 20%. Does supprious info-transfer arise? 
 
+def mi_fnc(s_a, s_b, **mi_params):
+    """ Helper function
+    """
+    mi, mi_comod, counts = comlag.cfc_phaselag_mutualinfo(
+                                            s_a, s_b,
+                                            **mi_params)
+    d = dict(mi=mi, mi_comod=mi_comod, counts=counts)
+    return d
+
 # Which frequencies to calculate phase for
-f_mod_centers = np.logspace(np.log10(4), np.log10(20), 10)
-f_mod_width = f_mod_centers / 6
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width = f_mod_centers / 8
 f_mod = np.tile(f_mod_width, [2, 1]).T \
             * np.tile([-1, 1], [len(f_mod_centers), 1]) \
             + np.tile(f_mod_centers, [2, 1]).T
 
 # Which frequencies to calculate power for
 f_car = np.arange(20, 100, 10)
+
+def plot_contour(x, caxis_label='', **kwargs):
+    plt.contourf(f_mod_centers, f_car, x.T,
+                 #levels=np.linspace(0, 1, 50),
+                 **kwargs)
+    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb.ax.set_ylabel(caxis_label)
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
 
 # Parameters for the simulated signals
 sim_params = dict(dur=100, fs=1000,
@@ -703,45 +721,51 @@ sim_params = dict(dur=100, fs=1000,
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
                  f_mod=f_mod, f_car=f_car,
-                 f_car_bw=10, n_bins=8)
+                 f_car_bw=10, n_bins=2**4,
+                 method='sine fit adj')
 
-def mi_fnc(s_a, s_b):
-    """ Helper function
-    """
-    mi, mi_comod, counts = comlag.cfc_phaselag_mutualinfo(
-                                            s_a, s_b,
-                                            **mi_params)
-    d = dict(mi=mi, mi_comod=mi_comod, counts=counts)
-    return d
-
-# Simulate signals with no cross-talk
-t, s_a, s_b = simulate.sim(signal_leakage=0, **sim_params)
-res_no_crosstalk = mi_fnc(s_a, s_b)
-
-# Simulate signals with a lot of cross-talk
-t, s_a, s_b = simulate.sim(signal_leakage=0.5, **sim_params)
-res_crosstalk = mi_fnc(s_a, s_b)
-
-# Plot it
-def plot_contour(x, **kwargs):
-    plt.contourf(f_mod_centers, f_car, x.T,
-                 #levels=np.linspace(0, 1, 50),
-                 **kwargs)
-    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
-    cb.ax.set_ylabel('Sine-fit amp.')
-    plt.ylabel('HF freq (Hz)')
-    plt.xlabel('Phase freq (Hz)')
+methods = {'tort': 'Mod. Index',
+           'sine psd': 'bits$^2$ / Hz',
+           'sine amp': 'bits / Hz',
+           'sine fit adj': 'Mod. Index',
+           'rsquared': '$R^2$',
+           'vector': 'Vector length'}
 
 plt.figure(figsize=(4, 6))
+for shared_gamma in [True, False]:
+    sim_params['shared_gamma'] = shared_gamma
 
-plt.subplot(2, 1, 1)
-plot_contour(res_no_crosstalk['mi_comod'])
-plt.title('No cross-talk')
+    # Simulate signals with no cross-talk
+    t, s_a, s_b = simulate.sim(signal_leakage=0, **sim_params)
+    sig_no_crosstalk = {'t': t, 's_a': s_a, 's_b': s_b}
 
-plt.subplot(2, 1, 2)
-plot_contour(res_crosstalk['mi_comod'])
-plt.title('Includes cross-talk')
+    # Simulate signals with a lot of cross-talk
+    t, s_a, s_b = simulate.sim(signal_leakage=0.5, **sim_params)
+    sig_crosstalk = {'t': t, 's_a': s_a, 's_b': s_b}
 
-plt.tight_layout()
+    for method in methods.keys():
+        mi_params['method'] = method
+        res_no_crosstalk = mi_fnc(sig_no_crosstalk['s_a'],
+                                  sig_no_crosstalk['s_b'],
+                                  **mi_params)
+        res_crosstalk = mi_fnc(sig_crosstalk['s_a'],
+                               sig_crosstalk['s_b'],
+                               **mi_params)
 
-plt.savefig(f'{plot_dir}mi_comod_cross-talk.png', dpi=300)
+        # Plot it
+        plt.clf()
+
+        plt.subplot(2, 1, 1)
+        plot_contour(res_no_crosstalk['mi_comod'], methods[method])
+        plt.title('No cross-talk')
+
+        plt.subplot(2, 1, 2)
+        plot_contour(res_crosstalk['mi_comod'], methods[method])
+        plt.title('Includes cross-talk')
+
+        plt.tight_layout()
+
+        gamma_cond = 'shared' if sim_params['shared_gamma'] else 'separate'
+        fname_stem = 'mi_comod_cross-talk'
+        fname = f'{fname_stem}_{mi_params["method"]}_{gamma_cond}-gamma.png'
+        plt.savefig(f'{plot_dir}{fname}', dpi=300)
