@@ -845,6 +845,14 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
         mi_comod = mean_vector_length
         
 
+    elif method == 'vector-imag':
+        # Imaginary part of the mean vector length.
+        # Inspired by the ITPC and imaginary coherence.
+        theta = np.exp(1j * phase_bins[:-1])
+        phase_vectors = mi * theta
+        mean_vector_length = np.imag(np.mean(phase_vectors, axis=-1))
+        mi_comod = mean_vector_length
+
     else:
         raise(Exception(f'method {method} not recognized'))
 

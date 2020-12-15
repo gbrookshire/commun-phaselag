@@ -729,7 +729,8 @@ methods = {'tort': 'Mod. Index',
            'sine amp': 'bits / Hz',
            'sine fit adj': 'Mod. Index',
            'rsquared': '$R^2$',
-           'vector': 'Vector length'}
+           'vector': 'Vector length',
+           'vector-imag': 'Imag(Vector length)'}
 
 plt.figure(figsize=(4, 6))
 for shared_gamma in [True, False]:
