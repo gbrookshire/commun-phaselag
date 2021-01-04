@@ -822,7 +822,6 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
         mod_inx = y[..., 1] / np.sum(np.delete(y, 1, axis=-1), axis=-1)
         mi_comod = mod_inx
 
-
     elif method == 'rsquared':
         # Find the R^2 of a sine wave fit to the MI by phase-lag
         x = np.stack([np.sin(phase_bins[:-1]), np.cos(phase_bins[:-1])]).T
@@ -836,22 +835,31 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
                 rsq = results.rsquared
                 mi_comod[i_fm, i_fc] = rsq
 
-
     elif method == 'vector':
         # Look at mean vector length. Inspired by the ITPC
         theta = np.exp(1j * phase_bins[:-1])
         phase_vectors = mi * theta
         mean_vector_length = np.abs(np.mean(phase_vectors, axis=-1))
         mi_comod = mean_vector_length
-        
 
     elif method == 'vector-imag':
         # Imaginary part of the mean vector length.
         # Inspired by the ITPC and imaginary coherence.
         theta = np.exp(1j * phase_bins[:-1])
         phase_vectors = mi * theta
-        mean_vector_length = np.imag(np.mean(phase_vectors, axis=-1))
+        mean_vector_length = np.abs(np.imag(np.mean(phase_vectors, axis=-1)))
         mi_comod = mean_vector_length
+
+    elif method == 'itlc':
+        # Something like the inter-trial linear coherence (ITLC)
+        # Delorme & Makeig (2004)
+        F = mi * np.exp(1j * phase_bins[:-1])
+        n = n_bins
+        num = np.sum(F, axis=-1)
+        den = np.sqrt(n * np.sum(np.abs(F) ** 2, axis=-1))
+        itlc = num / den
+        itlc = np.abs(itlc)
+        mi_comod = itlc
 
     else:
         raise(Exception(f'method {method} not recognized'))
