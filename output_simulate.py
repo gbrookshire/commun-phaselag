@@ -730,10 +730,11 @@ methods = {'tort': 'Mod. Index',
            'sine fit adj': 'Mod. Index',
            'rsquared': '$R^2$',
            'vector': 'Vector length',
-           'vector-imag': 'Imag(Vector length)'}
+           'vector-imag': 'Imag(Vector length)',
+           'itlc': 'ITLC'}
 
 plt.figure(figsize=(4, 6))
-for shared_gamma in [True, False]:
+for shared_gamma in [True]: #, False]:
     sim_params['shared_gamma'] = shared_gamma
 
     # Simulate signals with no cross-talk
@@ -770,3 +771,120 @@ for shared_gamma in [True, False]:
         fname_stem = 'mi_comod_cross-talk'
         fname = f'{fname_stem}_{mi_params["method"]}_{gamma_cond}-gamma.png'
         plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+
+################################################
+# Test effects of varying levels of cross-talk #
+################################################
+
+def mi_fnc(s_a, s_b, **mi_params):
+    """ Helper function
+    """
+    mi, mi_comod, counts = comlag.cfc_phaselag_mutualinfo(
+                                            s_a, s_b,
+                                            **mi_params)
+    d = dict(mi=mi, mi_comod=mi_comod, counts=counts)
+    return d
+
+# Which frequencies to calculate phase for
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width = f_mod_centers / 8
+f_mod = np.tile(f_mod_width, [2, 1]).T \
+            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+            + np.tile(f_mod_centers, [2, 1]).T
+
+# Which frequencies to calculate power for
+f_car = np.arange(20, 100, 10)
+
+def plot_contour(x, caxis_label='', **kwargs):
+    plt.contourf(f_mod_centers, f_car, x.T,
+                 #levels=np.linspace(0, 1, 50),
+                 **kwargs)
+    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
+    cb.ax.set_ylabel(caxis_label)
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+
+# Parameters for the simulated signals
+sim_params = dict(dur=100, fs=1000,
+                  shared_gamma=True,
+                  noise_amp=0.01, common_noise_amp=0.0)
+
+# Parameters for the MI phase-lag analysis
+mi_params = dict(fs=sim_params['fs'],
+                 f_mod=f_mod, f_car=f_car,
+                 f_car_bw=10, n_bins=2**4)
+
+methods = {'sine psd': 'bits$^2$ / Hz',
+           'vector': 'Vector length',
+           'vector-imag': 'Imag(Vector length)'}
+cross_talk_levels = np.linspace(0, 0.6, num=7)
+
+plt.figure(figsize=(4, 3))
+for leakage in cross_talk_levels:
+    # Simulate signals
+    t, s_a, s_b = simulate.sim(signal_leakage=leakage, **sim_params)
+
+    # Run the analyses and save the plots
+    for method in methods.keys():
+        res = mi_fnc(s_a, s_b, 
+                     method=method,
+                     **mi_params)
+        plt.clf()
+        plot_contour(res['mi_comod'], methods[method])
+        plt.title(f'Leakage: {leakage:.1f}')
+        plt.tight_layout()
+        fname_stem = 'mi_comod_cross-talk'
+        fname = f'{fname_stem}_{method}_leak_{leakage:.1f}.png'
+        plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+!notify-send 'Analyses finished'
+
+
+
+########
+import numpy as np
+n_bins = 18
+phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)[:-1]
+
+def vector_length(phase, amp):
+    phase_vectors = amp * np.exp(1j * phase)
+    mean_vector_length = np.abs(np.mean(phase_vectors))
+    return mean_vector_length
+
+def itlc(phase, amp):
+    assert len(phase) == len(amp)
+    F = amp * np.exp(1j * phase)
+    n = len(phase)
+    num = np.sum(F)
+    den = np.sqrt(n * np.sum(np.abs(F) ** 2))
+    itlc = num / den
+    return np.abs(itlc)
+
+
+mi_flat = np.ones(n_bins)
+mi_sine = 1.01 + np.sin(phase_bins)
+mi_dirac = np.zeros(n_bins) + 1e-15
+mi_dirac[2] = 1
+
+for mi in [mi_flat, mi_sine, mi_dirac]:
+    print(itlc(phase_bins, mi))
+
+mi = mi_sine
+phase = np.exp(1j * phase_bins)
+plt.plot(mi * np.real(phase), mi * np.imag(phase))
+plt.axvline(0)
+plt.axhline(0)
+
+for mi in [mi_flat, mi_sine, mi_dirac]:
+    print(vector_length(phase_bins, mi))
+
+print(vector_length(phase_bins, mi_flat))
+print(vector_length(phase_bins, mi_sine))
+print(vector_length(phase_bins, mi_dirac))
+
+
+
+
+
+
