@@ -1167,9 +1167,91 @@ def vm2d_helper(x, kappa, mu1, mu2, scale):
     return y
 
 
+def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
+                 phase_diff_freq_lims=(2, 20)):
     """
+    Compute phase slope index (PSI) as a function of phase lag
     """
 
+    # psi_bw: Frequency smoothing of the PSI in Hz
+    # phase_diff_freq_lims: Freqs at which phase diff is calculated
+    fft_freqs = np.fft.fftfreq(nfft, 1 / fs)
+    phase_diff_freq_inx = (fft_freqs > phase_diff_freq_lims[0]) \
+                            & (fft_freqs < phase_diff_freq_lims[1])
+    phase_diff_freq_inx = np.nonzero(phase_diff_freq_inx)[0]
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins, endpoint=False)
+
+    if step_size is None:
+        step_size = int(nfft / 2)
+    segment_onsets = np.arange(0, len(s_a), step_size)
+    segment_onsets = segment_onsets[(segment_onsets + nfft) < len(s_a)]
+
+    def _dft_helper(x):
+        return np.fft.fft(np.hanning(len(x)) * x)
+
+    # Arrays for the cross-spectral density
+    # Dims: FFT frequency, LF phase bin, LF phase-diff frequency
+    csd_ij = np.zeros([nfft, n_bins, nfft], dtype=np.complex128)
+    csd_ii = csd_ij.copy()
+    csd_jj = csd_ij.copy()
+    phase_bin_counts = np.zeros([n_bins, nfft]) # LF phase bin, phase-diff freq
+    for seg in segment_onsets:
+        sl = slice(seg, (seg + nfft))
+        z_i = _dft_helper(s_a[sl]) # Windowed DFT of this segment
+        z_j = _dft_helper(s_b[sl])
+        phase_diff = np.angle(z_i * np.conj(z_j)) # phase diff for each freq
+        for i_freq in phase_diff_freq_inx:
+            i_bin = np.nonzero(phase_bins < phase_diff[i_freq])[0].max()
+            phase_bin_counts[i_bin, i_freq] += 1
+            csd_ij[:, i_bin, i_freq] += z_i * np.conj(z_j)
+            csd_ii[:, i_bin, i_freq] += z_i * np.conj(z_i)
+            csd_jj[:, i_bin, i_freq] += z_j * np.conj(z_j)
+
+    # Missing cells (no obs at that phase diff) show up as zero. Replace w/ nan
+    csd_ij[csd_ij == 0] = np.nan
+    csd_ii[csd_ij == 0] = np.nan
+    csd_jj[csd_ij == 0] = np.nan
+
+    # Only keep positive frequencies
+    keep_freqs = fft_freqs >= 0
+    csd_ij = csd_ij[keep_freqs, :, :][:, :, keep_freqs]
+    csd_ii = csd_ii[keep_freqs, :, :][:, :, keep_freqs]
+    csd_jj = csd_jj[keep_freqs, :, :][:, :, keep_freqs]
+    phase_bin_counts = phase_bin_counts[:, keep_freqs]
+
+    # Divide by the number of segments to get the CSD
+    phase_bin_counts += 1 # Avoid divide-by-zero errors
+    phase_bin_counts = np.tile(phase_bin_counts,
+                               [np.sum(keep_freqs), 1, 1])
+    csd_ij /= phase_bin_counts
+    csd_ii /= phase_bin_counts
+    csd_jj /= phase_bin_counts
+
+    # Get complex coherency
+    C_ij = csd_ij / np.sqrt(csd_ii * csd_jj)
+
+    # Get the PSI for each frequency using a moving average
+    Psi_ij = np.full([np.sum(keep_freqs), n_bins, np.sum(keep_freqs)], np.nan)
+    kern = np.ones(np.sum(fft_freqs[:int(nfft/2)] <= psi_bw)) # Moving avg kern
+    inner = np.conj(C_ij) * np.roll(C_ij, 1, axis=0) # Inner part of PSI calc
+    for i_bin in range(n_bins):
+        for i_freq in phase_diff_freq_inx:
+            Psi_ij[:, i_bin, i_freq] = np.imag(np.convolve(
+                                                    inner[:, i_bin, i_freq],
+                                                    kern,
+                                                    'same'))
+
+    # Compute the modulation index
+    # PSD of a sine wave fit to the PSI as a function of phase-difference
+    sine_psd = (np.abs(np.fft.fft(Psi_ij, axis=1)) ** 2) / n_bins
+    mi_comod = sine_psd[:, 1, :] # Take the freq matching the whole signal
+
+    # Bundle the results together
+    res = dict(Psi_ij=Psi_ij,
+               mi_comod=mi_comod,
+               freqs=fft_freqs[keep_freqs],
+               phase_bins=phase_bins)
+    return res
 
 
 def pearson(a, b):

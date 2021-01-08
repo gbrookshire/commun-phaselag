@@ -841,6 +841,101 @@ for leakage in cross_talk_levels:
 !notify-send 'Analyses finished'
 
 
+#############################################
+# Test the effects of cross-talk on the PSI #
+#############################################
+
+# Parameters for the simulated signals
+sim_params = dict(dur=100, fs=1000,
+                  shared_gamma=True,
+                  noise_amp=0.01, common_noise_amp=0.0)
+
+# Parameters for the PSI phase-lag analysis
+mi_params = dict(fs=sim_params['fs'],
+                 nfft=2**9, step_size=2**4,
+                 n_bins=2**4,
+                 psi_bw=15)
+
+phase_diff_lims = [2, 20] # Freqs at which phase diff is calculated
+psi_lims = [40, 120] # Freqs at which PSI is calculated
+
+cross_talk_levels = np.linspace(0, 0.6, num=7)
+
+plt.figure(figsize=(4, 3))
+for leakage in cross_talk_levels:
+    # Simulate signals
+    t, s_a, s_b = simulate.sim(signal_leakage=leakage, **sim_params)
+
+    # Run the analyses and save the plots
+    res = comlag.psi_phaselag(s_a, s_b, 
+                              **mi_params)
+
+    plt.clf()
+    z = res['mi_comod']
+    # Set color scale to max within range of interest
+    f = res['freqs']
+    fx = (phase_diff_lims[0] < f) & (f < phase_diff_lims[1])
+    fy = (psi_lims[0] < f) & (f < psi_lims[1])
+    z_max = np.max(np.abs(z[fy,:][:,fx]))
+    plt.contourf(f, f, z,
+                 levels=np.linspace(0, z_max, 10))
+    cb = plt.colorbar(ticks=[0, z.max()])
+    cb.ax.set_ylabel('Mod. Ind.')
+    plt.xlabel('Phase freq (Hz)')
+    plt.ylabel('HF freq (Hz)')
+    plt.xlim(phase_diff_lims)
+    plt.ylim(psi_lims)
+    plt.title(f'Leakage: {leakage:.1f}')
+    plt.tight_layout()
+    fname_stem = 'mi_comod_cross-talk'
+    fname = f'{fname_stem}_psi_leak_{leakage:.1f}.png'
+    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+!notify-send 'Analyses finished'
+
+# # Plots for testing
+# plt.clf()
+
+# plt.subplot(1, 2, 1)
+# i_freq = 10
+# x = Psi_ij[:,:,i_freq]
+# levels = np.linspace(-np.max(np.abs(x)),
+#                      np.max(np.abs(x)),
+#                      100)
+# plt.contourf(phase_bins, fft_freqs[keep_freqs], 
+#              x,
+#              levels=levels,
+#              cmap=plt.cm.RdBu_r)
+# plt.xlabel('LF phase diff')
+# plt.ylabel('HF PSI freq')
+# plt.ylim(psi_lims)
+# cb = plt.colorbar(ticks=np.array([-1, 0, 1]) * np.max(np.abs(x)))
+# cb.ax.set_ylabel('PSI')
+
+# plt.subplot(1, 2, 2)
+# max_val = 0.04
+# plt.contourf(fft_freqs[keep_freqs], fft_freqs[keep_freqs],
+#              mi_comod,
+#              levels=np.linspace(0, max_val, 100))
+# plt.xlabel('LF phase freq')
+# plt.ylabel('HF PSI freq')
+# plt.xlim(phase_diff_lims)
+# plt.ylim(psi_lims)
+# cb = plt.colorbar(ticks=[0, 0.04])
+# cb.ax.set_ylabel('Mod. Ind.')
+
+# plt.tight_layout()
+
+
+
+
+
+
+
+
+
+
+
 
 ########
 import numpy as np
