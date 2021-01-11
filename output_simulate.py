@@ -854,7 +854,8 @@ sim_params = dict(dur=100, fs=1000,
 mi_params = dict(fs=sim_params['fs'],
                  nfft=2**9, step_size=2**4,
                  n_bins=2**4,
-                 psi_bw=15)
+                 psi_bw=10)
+#for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
 
 phase_diff_lims = [2, 20] # Freqs at which phase diff is calculated
 psi_lims = [40, 120] # Freqs at which PSI is calculated
@@ -876,15 +877,15 @@ for leakage in cross_talk_levels:
     f = res['freqs']
     fx = (phase_diff_lims[0] < f) & (f < phase_diff_lims[1])
     fy = (psi_lims[0] < f) & (f < psi_lims[1])
-    z_max = np.max(np.abs(z[fy,:][:,fx]))
+    z_max = np.nanmax(z[fy,:][:,fx])
     plt.contourf(f, f, z,
                  levels=np.linspace(0, z_max, 10))
-    cb = plt.colorbar(ticks=[0, z.max()])
-    cb.ax.set_ylabel('Mod. Ind.')
+    cb = plt.colorbar(ticks=[0, z_max], format='%.2f')
+    cb.ax.set_ylabel('Sine amp')
     plt.xlabel('Phase freq (Hz)')
     plt.ylabel('HF freq (Hz)')
     plt.xlim(phase_diff_lims)
-    plt.ylim(psi_lims)
+    plt.ylim(psi_lims) #20, 90) #
     plt.title(f'Leakage: {leakage:.1f}')
     plt.tight_layout()
     fname_stem = 'mi_comod_cross-talk'
