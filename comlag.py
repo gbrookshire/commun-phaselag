@@ -1220,7 +1220,7 @@ def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
     phase_bin_counts = phase_bin_counts[:, keep_freqs]
 
     # Divide by the number of segments to get the CSD
-    phase_bin_counts += 1 # Avoid divide-by-zero errors
+    phase_bin_counts[phase_bin_counts == 0] = np.nan
     phase_bin_counts = np.tile(phase_bin_counts,
                                [np.sum(keep_freqs), 1, 1])
     csd_ij /= phase_bin_counts
