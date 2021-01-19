@@ -864,6 +864,80 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
     else:
         raise(Exception(f'method {method} not recognized'))
 
+
+
+def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
+                                 f_car_bw=5, n_bins=18, method='sine psd'):
+    """
+    Compute conditional mutual information between two signals, and lagged
+    copies of those two signals.
+
+    When A-->B, I(A;B|LA) << I(A;B|LB). This happens because conditioning on LA
+    reduces the CMI when LA predicts both A and B independently (i.e. past A
+    predicts future A and B); but conditioning on LB does not reduce the CMI
+    when LB does not predict A or B.
+
+    s_a, s_b : np.ndarray
+        The signals
+    cmi_lag : float, seq of floats
+        The lags to test between the two variables. Should be positive numbers.
+        
+    """
+    #TODO Test whether when B-->A, you need a negative lag (I expect not)
+
+    phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+    s = {'a': s_a, 'b': s_b}
+
+    # Initialize mutual information array
+    # Dims: LF freq, HF freq, CMI lag, direction, LF phase bin
+    mi = np.full([len(f_mod), len(f_car), len(cmi_lag), 2, n_bins], np.nan)
+    # Initialize array to hold the number of observations in each bin
+    counts = np.full([len(f_mod), n_bins], np.nan)
+
+    for i_fm, fm in enumerate(f_mod):
+        print(fm)
+        # Compute the LF phase-difference of each signal
+        filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+                    for sig in 'ab'}
+        phase = {sig: np.angle(hilbert(filt[sig], axis=0))
+                    for sig in 'ab'}
+        phase_diff = phase['a'] - phase['b']
+        phase_diff = wrap_to_pi(phase_diff)
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+        # Append trials over time if data includes multiple trials
+        phase_diff = np.ravel(phase_diff, 'F')
+
+        for i_fc, fc in enumerate(f_car):
+            # Filter the HF signals
+            filt = {sig: bp_filter(s[sig].T,
+                                   fc - (f_car_bw / 2),
+                                   fc + (f_car_bw / 2),
+                                   fs, 2).T
+                        for sig in 'ab'}
+            # Make a 2D version of the signal with its Hilbert transform
+            # This makes mutual information more informative
+            h = {sig: hilbert(filt[sig]) for sig in 'ab'}
+            sig_2d = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
+                        for sig in 'ab'}
+
+            # Compute MI for each phase bin
+            for phase_bin in np.unique(phase_diff):
+                phase_sel = phase_diff == phase_bin
+                # Store the count of observations per phase bin
+                if i_fc == 0:
+                    counts[i_fm, phase_bin] = np.sum(phase_sel)
+                # Compute CMI in each direction
+                for i_lag, lag in enumerate(list(cmi_lag)):
+                    for i_direc, direc in enumerate('ab'):
+                        i = gcmi.gccmi_ccc(
+                                sig_2d['a'][:, phase_sel],
+                                sig_2d['b'][:, phase_sel],
+                                np.roll(sig_2d[direc], lag, axis=1)[:, phase_sel])
+                        mi[i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+
+    # Compute a phase-dependence index for each combination of LF and HF
+    mi_comod = mod_index(mi, method)
+    return mi, mi_comod, counts
     return mi, mi_comod, counts
 
 

@@ -928,6 +928,92 @@ for leakage in cross_talk_levels:
 # plt.tight_layout()
 
 
+###########################################
+# Communication based on Transfer-entropy #
+###########################################
+
+# Which frequencies to calculate phase for
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width = f_mod_centers / 8
+f_mod = np.tile(f_mod_width, [2, 1]).T \
+            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+            + np.tile(f_mod_centers, [2, 1]).T
+
+# Which frequencies to calculate power for
+f_car = np.arange(20, 100, 10)
+
+def plot_contour(x, levels, **kwargs):
+    plt.contourf(f_mod_centers, f_car, x.T,
+                 levels,
+                 **kwargs)
+    cb = plt.colorbar(format='%.2f',
+                      ticks=[levels.min(), 0, levels.max()])
+    cb.ax.set_ylabel('Transfer entropy directionality')
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+
+# Parameters for the simulated signals
+sim_params = dict(dur=100, fs=1000,
+                  shared_gamma=True,
+                  noise_amp=0.01, common_noise_amp=0.0)
+
+# Parameters for the MI phase-lag analysis
+mi_params = dict(fs=sim_params['fs'],
+                 f_mod=f_mod, f_car=f_car,
+                 f_car_bw=10, n_bins=2**4,
+                 cmi_lag=[15],
+                 method='sine psd')
+#for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
+
+
+
+cross_talk_levels = np.linspace(0, 0.6, num=7)
+
+for leakage in cross_talk_levels:
+
+    # Simulate signals with no cross-talk
+    t, s_a, s_b = simulate.sim(signal_leakage=0, **sim_params)
+    
+    # Run the analysis
+    _, mi_comod, _ = comlag.cfc_phaselag_transferentropy(s_a, s_b,
+                                                         **mi_params)
+    
+    # Get the difference in MI between conditioning on past A vs past B
+    mi_diff = np.diff(mi_comod[:,:,0,:], axis=-1)[..., 0]
+    
+    # Plot it
+    plt.figure(figsize=(4, 3))
+    levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(mi_diff)), 50)
+    plot_contour(mi_diff,
+                 levels=levels,
+                 cmap=plt.cm.RdBu_r)
+
+    plt.title(f'Leakage: {leakage:.1f}')
+    plt.tight_layout()
+    fname_stem = 'mi_comod_cross-talk'
+    fname = f'{fname_stem}_te_expandRange_leak_{leakage:.1f}.png'
+    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+    # Plot each direction
+    plt.figure(figsize=(4, 6))
+    plt.title(f'Leakage: {leakage:.1f} MI(A;B|A)')
+    for direc, label in zip([0,1], 'AB'):
+        plt.subplot(2, 1, 1 + direc)
+        x = mi_comod[:,:,0,direc]
+        plt.contourf(f_mod_centers, f_car, x.T)
+        cb = plt.colorbar(format='%.2f')
+        cb.ax.set_ylabel('TE (bits)')
+        plt.ylabel('HF freq (Hz)')
+        plt.xlabel('Phase freq (Hz)')
+        plt.title(f'MI(A;B|{label}$_{{\\tau}}$)')
+
+    plt.tight_layout()
+    fname = f'{fname_stem}_te_direction_{leakage:.1f}.png'
+    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+    plt.close('all')
+
+!notify-send 'Analyses finished'
 
 
 
