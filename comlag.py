@@ -910,6 +910,68 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
     return mi, mi_comod, counts
+ def cfc_phaselag_cmi(s_a, s_b, fs, f_mod, f_car, cmi_lag,
+                      f_car_bw=5):
+    """
+    Compute conditional mutual information between two signals (one of which is
+    lagged), conditioned on the phase difference of those signals.
+
+    This doesn't work because knowing the phase difference doesn't actually
+    help you predict A given B, but A is more predictive of B at different
+    values of the phase difference.
+
+    s_a, s_b : np.ndarray
+        The signals
+    cmi_lag : float, seq of floats
+        The lags to test between the two variables. Should be positive numbers.
+        
+    """
+
+    s = {'a': s_a, 'b': s_b}
+
+    # Initialize mutual information array
+    # Dims: LF freq, HF freq, CMI lag, direction
+    mi = np.full([len(f_mod), len(f_car), len(cmi_lag), 2], np.nan)
+    # Initialize array to hold the number of observations in each bin
+    counts = np.full([len(f_mod), n_bins], np.nan)
+
+    for i_fm, fm in enumerate(f_mod):
+        print(fm)
+        # Compute the LF phase-difference of each signal
+        filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+                    for sig in 'ab'}
+        phase = {sig: np.angle(hilbert(filt[sig], axis=0))
+                    for sig in 'ab'}
+        phase_diff = phase['a'] - phase['b']
+        phase_diff = wrap_to_pi(phase_diff)
+        # Make 2D signal out of the phase difference for use with GCMI
+        phase_diff_2d = np.stack([np.sin(phase_diff), np.cos(phase_diff)])
+
+        for i_fc, fc in enumerate(f_car):
+            # Filter the HF signals
+            filt = {sig: bp_filter(s[sig].T,
+                                   fc - (f_car_bw / 2),
+                                   fc + (f_car_bw / 2),
+                                   fs, 2).T
+                        for sig in 'ab'}
+            # Make a 2D version of the signal with its Hilbert transform
+            # This makes mutual information more informative
+            h = {sig: hilbert(filt[sig]) for sig in 'ab'}
+            sig_2d = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
+                        for sig in 'ab'}
+
+            for i_lag, lag in enumerate(list(cmi_lag)):
+                L = lambda x: np.roll(x, lag, axis=1) # Lag function
+                # Compute I(LA;B|PhaseDiff) and I(A;LB|PhaseDiff)
+                mi_a = gcmi.gccmi_ccc(L(sig_2d['a']),
+                                      sig_2d['b'],
+                                      phase_diff_2d)
+                mi_b = gcmi.gccmi_ccc(sig_2d['a'],
+                                      L(sig_2d['b']),
+                                      phase_diff_2d)
+                mi[i_fm, i_fc, i_lag, :] = (mi_a, mi_b)
+
+   return mi, counts
 
 
 def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
