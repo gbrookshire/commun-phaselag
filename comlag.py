@@ -839,7 +839,8 @@ def mod_index(x, method):
 
 
 def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
-                                 f_car_bw=5, n_bins=18, method='sine psd'):
+                                 f_car_bw=5, n_bins=18, method='sine psd',
+                                 calc_type=None):
     """
     Compute conditional mutual information between two signals, and lagged
     copies of those two signals.
@@ -859,6 +860,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
     s = {'a': s_a, 'b': s_b}
+
+    assert calc_type in (1, 2)
 
     # Initialize mutual information array
     # Dims: LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -899,19 +902,31 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
                 if i_fc == 0:
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
                 # Compute CMI in each direction
-                for i_lag, lag in enumerate(list(cmi_lag)):
-                    for i_direc, direc in enumerate('ab'):
-                        i = gcmi.gccmi_ccc(
-                                sig_2d['a'][:, phase_sel],
-                                sig_2d['b'][:, phase_sel],
-                                np.roll(sig_2d[direc], lag, axis=1)[:, phase_sel])
-                        mi[i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+                for i_lag, lag in enumerate(cmi_lag):
+                    L = lambda x: np.roll(x, lag, axis=1) # Lag function
+                    if calc_type == 1:
+                        # Compute I(A;B|LA) and I(A;B|LB)
+                        for i_direc, direc in enumerate('ab'):
+                            i = gcmi.gccmi_ccc(
+                                    sig_2d['a'][:, phase_sel],
+                                    sig_2d['b'][:, phase_sel],
+                                    L(sig_2d[direc])[:, phase_sel])
+                            mi[i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+                    elif calc_type == 2:
+                        # Compute I(LA;B|LB) and I(A;LB|LA)
+                        for i_direc, direc in enumerate('ab'):
+                            s1, s2 = ('a', 'b') if direc == 'a' else ('b', 'a')
+                            i = gcmi.gccmi_ccc(
+                                    L(sig_2d[s1])[:, phase_sel],
+                                    sig_2d[s2][:, phase_sel],
+                                    L(sig_2d[s2])[:, phase_sel])
+                            mi[i_fm, i_fc, i_lag, i_direc, phase_bin] = i
 
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
-    return mi, mi_comod, counts
- def cfc_phaselag_cmi(s_a, s_b, fs, f_mod, f_car, cmi_lag,
-                      f_car_bw=5):
+    return mi_comod
+
+def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
     """
     Compute conditional mutual information between two signals (one of which is
     lagged), conditioned on the phase difference of those signals.
@@ -971,7 +986,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
                                       phase_diff_2d)
                 mi[i_fm, i_fc, i_lag, :] = (mi_a, mi_b)
 
-   return mi, counts
+    return mi, counts
 
 
 def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,

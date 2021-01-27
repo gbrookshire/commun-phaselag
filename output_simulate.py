@@ -222,7 +222,7 @@ plt.tight_layout()
 ###################################################################
 
 mi, mi_comod = comlag.cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car)
-plot_contour(mi_comod, colorbar_label='Adj. $R^2$')
+plot_contour(mi_comod, colorbar_label='')
 plt.savefig(f'{plot_dir}phase-diff_mutual-info.png')
 
 
@@ -722,7 +722,7 @@ sim_params = dict(dur=100, fs=1000,
 mi_params = dict(fs=sim_params['fs'],
                  f_mod=f_mod, f_car=f_car,
                  f_car_bw=10, n_bins=2**4,
-                 method='sine fit adj')
+                 method='sine psd')
 
 methods = {'tort': 'Mod. Index',
            'sine psd': 'bits$^2$ / Hz',
@@ -733,7 +733,7 @@ methods = {'tort': 'Mod. Index',
            'vector-imag': 'Imag(Vector length)',
            'itlc': 'ITLC'}
 
-plt.figure(figsize=(4, 6))
+#plt.figure(figsize=(4, 6))
 for shared_gamma in [True]: #, False]:
     sim_params['shared_gamma'] = shared_gamma
 
@@ -741,36 +741,71 @@ for shared_gamma in [True]: #, False]:
     t, s_a, s_b = simulate.sim(signal_leakage=0, **sim_params)
     sig_no_crosstalk = {'t': t, 's_a': s_a, 's_b': s_b}
 
-    # Simulate signals with a lot of cross-talk
-    t, s_a, s_b = simulate.sim(signal_leakage=0.5, **sim_params)
-    sig_crosstalk = {'t': t, 's_a': s_a, 's_b': s_b}
+    ### Simulate signals with a lot of cross-talk
+    ##t, s_a, s_b = simulate.sim(signal_leakage=0.5, **sim_params)
+    ##sig_crosstalk = {'t': t, 's_a': s_a, 's_b': s_b}
 
     for method in methods.keys():
+        plt.figure()
         mi_params['method'] = method
         res_no_crosstalk = mi_fnc(sig_no_crosstalk['s_a'],
                                   sig_no_crosstalk['s_b'],
                                   **mi_params)
-        res_crosstalk = mi_fnc(sig_crosstalk['s_a'],
-                               sig_crosstalk['s_b'],
-                               **mi_params)
+        ##res_crosstalk = mi_fnc(sig_crosstalk['s_a'],
+        ##                       sig_crosstalk['s_b'],
+        ##                       **mi_params)
 
         # Plot it
         plt.clf()
 
-        plt.subplot(2, 1, 1)
+        ##plt.subplot(2, 1, 1)
         plot_contour(res_no_crosstalk['mi_comod'], methods[method])
-        plt.title('No cross-talk')
+        ##plt.title('No cross-talk')
+        plt.title(method)
 
-        plt.subplot(2, 1, 2)
-        plot_contour(res_crosstalk['mi_comod'], methods[method])
-        plt.title('Includes cross-talk')
+        ##plt.subplot(2, 1, 2)
+        ##plot_contour(res_crosstalk['mi_comod'], methods[method])
+        ##plt.title('Includes cross-talk')
 
         plt.tight_layout()
 
-        gamma_cond = 'shared' if sim_params['shared_gamma'] else 'separate'
-        fname_stem = 'mi_comod_cross-talk'
-        fname = f'{fname_stem}_{mi_params["method"]}_{gamma_cond}-gamma.png'
-        plt.savefig(f'{plot_dir}{fname}', dpi=300)
+        ##gamma_cond = 'shared' if sim_params['shared_gamma'] else 'separate'
+        ##fname_stem = 'mi_comod_cross-talk'
+        ##fname = f'{fname_stem}_{mi_params["method"]}_{gamma_cond}-gamma.png'
+        ##plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+
+# Vary the lag between the signals
+lag = 15
+res_no_lag = mi_fnc(s_a, s_b, **mi_params)
+res_pos_lag = mi_fnc(np.roll(s_a, lag), s_b, **mi_params)
+res_neg_lag = mi_fnc(np.roll(s_a, -lag), s_b, **mi_params)
+
+plt.figure(figsize=(12, 3))
+levels = np.linspace(0, 2.6, 50)
+plt.subplot(1, 4, 1)
+plot_contour(res_neg_lag['mi_comod'], methods[method], levels=levels)
+plt.title('I(L$^{-}$A;B)')
+
+plt.subplot(1, 4, 2)
+plot_contour(res_no_lag['mi_comod'], methods[method], levels=levels)
+plt.title('I(A;B)')
+
+plt.subplot(1, 4, 3)
+plot_contour(res_pos_lag['mi_comod'], methods[method], levels=levels)
+plt.title('I(L$^{+}$A;B)')
+
+plt.subplot(1, 4, 4)
+plot_contour(res_pos_lag['mi_comod'] - res_neg_lag['mi_comod'],
+             methods[method],
+             levels=np.linspace(-2, 2, 50), cmap=plt.cm.RdBu_r)
+plt.title('I(L$^{+}$A;B) - I(L$^{-}$A;B)')
+
+plt.tight_layout()
+
+# TODO
+# Lagged MI as a function of cross-talk: I(LA;B) - I(A;LB)
+# Lagged CMI as a function of cross-talk: I(A;B|LA) - I(A;B|LB)
 
 
 ################################################
@@ -820,6 +855,16 @@ methods = {'sine psd': 'bits$^2$ / Hz',
            'vector-imag': 'Imag(Vector length)'}
 cross_talk_levels = np.linspace(0, 0.6, num=7)
 
+methods = {#'tort': 'Mod. Index',
+           #'sine psd': 'bits$^2$ / Hz',
+           #'sine amp': 'bits / Hz',
+           #'sine fit adj': 'Mod. Index',
+           'rsquared': '$R^2$',
+           'vector': 'Vector length',
+           'vector-imag': 'Imag(Vector length)',
+           'itlc': 'ITLC'}
+cross_talk_levels = [0, 0.5]
+
 plt.figure(figsize=(4, 3))
 for leakage in cross_talk_levels:
     # Simulate signals
@@ -834,7 +879,7 @@ for leakage in cross_talk_levels:
         plot_contour(res['mi_comod'], methods[method])
         plt.title(f'Leakage: {leakage:.1f}')
         plt.tight_layout()
-        fname_stem = 'mi_comod_cross-talk'
+        fname_stem = 'XX_mi_comod_cross-talk'
         fname = f'{fname_stem}_{method}_leak_{leakage:.1f}.png'
         plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
@@ -860,12 +905,16 @@ mi_params = dict(fs=sim_params['fs'],
 phase_diff_lims = [2, 20] # Freqs at which phase diff is calculated
 psi_lims = [40, 120] # Freqs at which PSI is calculated
 
-cross_talk_levels = np.linspace(0, 0.6, num=7)
+# Simulate signals
+t, s_a_orig, s_b_orig = simulate.sim(signal_leakage=leakage, **sim_params)
 
+cross_talk_levels = np.linspace(0, 0.6, num=7)
 plt.figure(figsize=(4, 3))
 for leakage in cross_talk_levels:
-    # Simulate signals
-    t, s_a, s_b = simulate.sim(signal_leakage=leakage, **sim_params)
+
+    # Mix the signals together
+    s_a = s_a_orig + (s_b_orig * signal_leakage)
+    s_b = (s_a_orig * signal_leakage) + s_b_orig
 
     # Run the analyses and save the plots
     res = comlag.psi_phaselag(s_a, s_b, 
@@ -942,131 +991,126 @@ f_mod = np.tile(f_mod_width, [2, 1]).T \
 # Which frequencies to calculate power for
 f_car = np.arange(20, 100, 10)
 
-def plot_contour(x, levels, **kwargs):
-    plt.contourf(f_mod_centers, f_car, x.T,
-                 levels,
-                 **kwargs)
-    cb = plt.colorbar(format='%.2f',
-                      ticks=[levels.min(), 0, levels.max()])
-    cb.ax.set_ylabel('Transfer entropy directionality')
-    plt.ylabel('HF freq (Hz)')
-    plt.xlabel('Phase freq (Hz)')
-
 # Parameters for the simulated signals
 sim_params = dict(dur=100, fs=1000,
-                  shared_gamma=True,
                   noise_amp=0.01, common_noise_amp=0.0)
 
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
                  f_mod=f_mod, f_car=f_car,
-                 f_car_bw=10, n_bins=2**4,
-                 cmi_lag=[15],
+                 f_car_bw=20, n_bins=2**4,
                  method='sine psd')
 #for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
+#i_fm = 9
+#i_fc = 5
+#fm = f_mod[i_fm]
+#fc = f_car[i_fc]
 
+# Simulate signals
+t, s_a_orig, s_b_orig = simulate.sim(**sim_params)
 
+lag = 15
+L = lambda x: np.roll(x, lag)
+cross_talk_levels = [0, 0.1, 0.2, 0.3] #np.linspace(0, 0.6, num=7)
 
-cross_talk_levels = np.linspace(0, 0.6, num=7)
+# # Varying the BW of the HF filter changes the spread of the activity, but in
+# # all cases the blob of activity is centered on the lower edge of the
+# # communication frequencies in the presence of cross-talk
+# f_car_bw_levels = (5, 10, 20)
+
+# # Varying the number of LF phase-difference bins
+# # Small numbers of bins are noisy. Larger numbers look good.
+# n_bins_levels = 2 ** np.arange(2, 5)
+
+# Varying the width of the LF BP filters
+# Ratios of 8 work well. 4 and 16 are messy.
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width_ratio_levels = [4, 8, 16]
+
 
 for leakage in cross_talk_levels:
 
-    # Simulate signals with no cross-talk
-    t, s_a, s_b = simulate.sim(signal_leakage=0, **sim_params)
-    
-    # Run the analysis
-    _, mi_comod, _ = comlag.cfc_phaselag_transferentropy(s_a, s_b,
-                                                         **mi_params)
-    
-    # Get the difference in MI between conditioning on past A vs past B
-    mi_diff = np.diff(mi_comod[:,:,0,:], axis=-1)[..., 0]
-    
-    # Plot it
-    plt.figure(figsize=(4, 3))
-    levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(mi_diff)), 50)
-    plot_contour(mi_diff,
-                 levels=levels,
-                 cmap=plt.cm.RdBu_r)
+    # Mix the signals together
+    s_a = s_a_orig + (s_b_orig * leakage)
+    s_b = (s_a_orig * leakage) + s_b_orig
 
-    plt.title(f'Leakage: {leakage:.1f}')
-    plt.tight_layout()
-    fname_stem = 'mi_comod_cross-talk'
-    fname = f'{fname_stem}_te_expandRange_leak_{leakage:.1f}.png'
-    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+    for f_mod_width_ratio in f_mod_width_ratio_levels:
 
-    # Plot each direction
-    plt.figure(figsize=(4, 6))
-    plt.title(f'Leakage: {leakage:.1f} MI(A;B|A)')
-    for direc, label in zip([0,1], 'AB'):
-        plt.subplot(2, 1, 1 + direc)
-        x = mi_comod[:,:,0,direc]
-        plt.contourf(f_mod_centers, f_car, x.T)
-        cb = plt.colorbar(format='%.2f')
-        cb.ax.set_ylabel('TE (bits)')
-        plt.ylabel('HF freq (Hz)')
-        plt.xlabel('Phase freq (Hz)')
-        plt.title(f'MI(A;B|{label}$_{{\\tau}}$)')
+        # Which frequencies to calculate phase for
+        f_mod_width = f_mod_centers / f_mod_width_ratio
+        f_mod = np.tile(f_mod_width, [2, 1]).T \
+                    * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+                    + np.tile(f_mod_centers, [2, 1]).T
+        mi_params['f_mod'] = f_mod
 
-    plt.tight_layout()
-    fname = f'{fname_stem}_te_direction_{leakage:.1f}.png'
-    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+        # # Get lagged conditional mutual information
+        # cmi_full = comlag.cfc_phaselag_transferentropy(s_a, s_b,
+        #                                             cmi_lag=[lag],
+        #                                             calc_type=1,
+        #                                             **mi_params)
+        # # Get the difference in MI between conditioning on past A vs past B
+        # cmi = {'a': cmi_full[:, :, 0, 0],
+        #     'b': cmi_full[:, :, 0, 1]}
+        # cmi['diff'] = cmi['a'] - cmi['b']
 
-    plt.close('all')
+        ## Get lagged mutual information
+        #_, mi_lag_a, _ = comlag.cfc_phaselag_mutualinfo(L(s_a), s_b, **mi_params)
+        #_, mi_lag_b, _ = comlag.cfc_phaselag_mutualinfo(s_a, L(s_b), **mi_params)
+        ## Get the diff in MI between lagging A and lagging B
+        #mi = {'a': mi_lag_a,
+        #    'b': mi_lag_b,
+        #    'diff': mi_lag_a - mi_lag_b}
+        
+        # Run something like transfer entropy
+        te_full = comlag.cfc_phaselag_transferentropy(s_a, s_b,
+                                                    cmi_lag=[lag],
+                                                    calc_type=2,
+                                                    **mi_params)
+        # Get the difference in MI between conditioning on past A vs past B
+        te = {'a': te_full[:, :, 0, 0],
+            'b': te_full[:, :, 0, 1]}
+        te['diff'] = te['a'] - te['b']
+        
+        # Put all the measures together
+        d = {
+             #'cmi': cmi,
+             #'mi': mi,
+             'te': te}
+
+        for measure in d.keys():
+            # Plot it
+            plt.figure(figsize=(9, 3))
+            for n_plot, lagged_sig in enumerate('ab'):
+                plt.subplot(1, 3, 1 + n_plot)
+                x = d[measure][lagged_sig]
+                plt.contourf(f_mod_centers, f_car, x.T)
+                cb = plt.colorbar(format='%.2f')
+                cb.ax.set_ylabel('I (bits)')
+                plt.ylabel('HF freq (Hz)')
+                plt.xlabel('Phase freq (Hz)')
+                plt.title(f'Lagged: {lagged_sig}')
+
+            plt.subplot(1, 3, 3)
+            x = d[measure]['diff']
+            levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
+            plt.contourf(f_mod_centers, f_car, x.T,
+                        levels=levels,
+                        cmap=plt.cm.RdBu_r)
+            cb = plt.colorbar(format='%.2f')
+            cb.ax.set_ylabel('Diff (bits)')
+            plt.ylabel('HF freq (Hz)')
+            plt.xlabel('Phase freq (Hz)')
+            plt.title(f'Diff (Leakage: {leakage:.1f})')
+            plt.tight_layout()
+
+            fname_stem = 'mi_comod_cross-talk'
+            #fname = f'{fname_stem}_{measure}_leak_{leakage:.1f}.png'
+            fname = f'{fname_stem}_{measure}_leak_{leakage:.1f}_lf-width_{f_mod_width_ratio}.png'
+            plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+        plt.close('all')
 
 !notify-send 'Analyses finished'
-
-
-
-
-
-
-
-
-
-
-########
-import numpy as np
-n_bins = 18
-phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)[:-1]
-
-def vector_length(phase, amp):
-    phase_vectors = amp * np.exp(1j * phase)
-    mean_vector_length = np.abs(np.mean(phase_vectors))
-    return mean_vector_length
-
-def itlc(phase, amp):
-    assert len(phase) == len(amp)
-    F = amp * np.exp(1j * phase)
-    n = len(phase)
-    num = np.sum(F)
-    den = np.sqrt(n * np.sum(np.abs(F) ** 2))
-    itlc = num / den
-    return np.abs(itlc)
-
-
-mi_flat = np.ones(n_bins)
-mi_sine = 1.01 + np.sin(phase_bins)
-mi_dirac = np.zeros(n_bins) + 1e-15
-mi_dirac[2] = 1
-
-for mi in [mi_flat, mi_sine, mi_dirac]:
-    print(itlc(phase_bins, mi))
-
-mi = mi_sine
-phase = np.exp(1j * phase_bins)
-plt.plot(mi * np.real(phase), mi * np.imag(phase))
-plt.axvline(0)
-plt.axhline(0)
-
-for mi in [mi_flat, mi_sine, mi_dirac]:
-    print(vector_length(phase_bins, mi))
-
-print(vector_length(phase_bins, mi_flat))
-print(vector_length(phase_bins, mi_sine))
-print(vector_length(phase_bins, mi_dirac))
-
-
-
 
 
 
