@@ -903,7 +903,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
                 # Compute CMI in each direction
                 for i_lag, lag in enumerate(cmi_lag):
-                    L = lambda x: np.roll(x, lag, axis=1) # Lag function
+                    L = lambda x: np.roll(x, int(lag), axis=1) # Lag function
                     if calc_type == 1:
                         # Compute I(A;B|LA) and I(A;B|LB)
                         for i_direc, direc in enumerate('ab'):
