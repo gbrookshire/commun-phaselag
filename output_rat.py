@@ -127,24 +127,34 @@ mi_full = saved_data.get('mi_full')
 mi_comod = saved_data.get('mi_comod')
 counts = saved_data.get('counts')
 
+# Mask out the lower right corner where there's spurious communication
+mask = np.full(mi_comod[0].shape, False)
+for i_fm in range(len(f_mod)):
+    for i_fc in range(len(f_car)):
+        if (f_car[i_fc] - f_car_bw / 2) < f_mod[i_fm, 1]:
+            mask[i_fm, i_fc] = True
+
 # Plot the MI comodulogram
-def plot_contour(x, colorbar_label='', **kwargs):
+def plot_contour(x, **kwargs):
+    x[mask] = np.nan
     plt.contourf(f_mod_centers, f_car, x.T,
-                 levels=np.linspace(0, 1, 50),
+                 #levels=np.linspace(0, np.nanmax(x), 50),
                  **kwargs)
-    cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
-    cb.ax.set_ylabel(colorbar_label)
+    cb = plt.colorbar(format='%.2f',
+                      ticks=[np.nanmin(x), np.nanmax(x)])
+    cb.ax.set_ylabel('Sine-fit amp.')
     plt.ylabel('HF freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
 
+plt.clf()
 for n,fn in enumerate(fnames):
     plt.subplot(3, 3, n + 1)
-    plot_contour(mi_comod[n], colorbar_label='$R^2$')
+    plot_contour(mi_comod[n].copy())
     plt.title(re.search('Rat[0-9]+', fn).group())
 # Plot the average
 plt.subplot(3, 3, len(fnames) + 1)
 mi_comod_avg = np.mean(np.array(mi_comod), axis=0)
-plot_contour(mi_comod_avg, colorbar_label='$R^2$')
+plot_contour(mi_comod_avg)
 plt.title('Average')
 
 plt.tight_layout()
