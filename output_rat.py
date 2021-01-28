@@ -4,6 +4,7 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import re
 from joblib import Parallel, delayed
+import datetime
 import comlag
 
 plt.ion()
@@ -424,3 +425,95 @@ fname = f"pac_sig{n_sig}_nfft{nfft}_ncyc{f_car_cycles}"
 plt.savefig(f'{plot_dir}{fname}.png')
 
 !notify-send "Analysis finished"
+
+
+###########################################
+# Communication based on transfer entropy #
+###########################################
+
+# Which frequencies to calculate phase for
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width = f_mod_centers / 8
+f_mod = np.tile(f_mod_width, [2, 1]).T \
+            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
+            + np.tile(f_mod_centers, [2, 1]).T
+
+# Which frequencies to calculate power for
+f_car = np.arange(20, 150, 10)
+
+# Parameters for the MI phase-lag analysis
+mi_params = dict(f_mod=f_mod, f_car=f_car,
+                 f_car_bw=20, n_bins=2**4,
+                 calc_type=2,
+                 method='sine psd')
+#for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
+
+lag_sec = 0.005 # By eyeballing the plot of high-gamma cross-MI
+n_jobs = 3
+
+def te_fnc(fn):
+    """ Helper function for parallel computation
+    """
+    d = loadmat(data_dir + fn)
+    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    fs = d['Fs'][0][0]
+    lag_samp = lag_sec * fs
+    s_a, s_b = s; cmi_lag=[lag_samp]
+    te_full = comlag.cfc_phaselag_transferentropy(s[0], s[1], fs,
+                                                  cmi_lag=[lag_samp],
+                                                  **mi_params)
+    ##te = {'a': te_full[:, :, 0, 0],
+    ##      'b': te_full[:, :, 0, 1]}
+    ##te['diff'] = te['a'] - te['b']
+    return te_full
+
+te_out = Parallel(n_jobs=n_jobs)(delayed(te_fnc)(fn) for fn in fnames)
+
+# Save the data
+now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
+save_fname = f"{data_dir}te/te_{now}.npz"
+np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
+
+# Load the saved data
+saved_data = np.load(save_fname, allow_pickle=True)
+te_out = saved_data.get('te')
+mi_params = saved_data.get('mi_params').item()
+lag_sec = saved_data.get('lag_sec')
+f_mod_centers = np.mean(mi_params['f_mod'], axis=1)
+
+te_a = np.array([x[:,:,0,0] for x in te_out])
+te_b = np.array([x[:,:,0,1] for x in te_out])
+te_diff = te_a - te_b
+
+# Plot it
+def plot_contour(x):
+    #plt.contourf(f_mod_centers, f_car, x.T, **kwargs)
+    levels = np.linspace(-np.max(np.abs(x)), np.max(np.abs(x)), 50)
+    plt.contourf(f_mod_centers, f_car[2:], x.T,
+                 levels=levels,
+                 cmap=plt.cm.RdBu_r)
+    cb = plt.colorbar(format='%.2f', ticks=[0])
+    cb.ax.set_ylabel('TE diff')
+    plt.ylabel('Amp freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+
+def subset_freqs(x):
+    return x[:, f_car >= 40]
+
+# Plot it for each rat
+for n, fn in enumerate(fnames):
+    plt.subplot(3, 3, n + 1)
+    plot_contour(subset_freqs(np.squeeze(te_diff[n, :, :])))
+    plt.title(re.search('Rat[0-9]+', fn).group())
+# Plot the average
+plt.subplot(3, 3, len(fnames) + 1)
+avg = subset_freqs(np.squeeze(np.mean(te_diff, axis=0)))
+plot_contour(avg)
+plt.title('Average')
+
+plt.tight_layout()
+
+fname = f"te_diff"
+plt.savefig(f'{plot_dir}{fname}.png')
+
+
