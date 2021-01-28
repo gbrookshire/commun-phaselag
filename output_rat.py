@@ -79,23 +79,20 @@ because we essentially only have data from one phase difference.
 ###################################################################
 
 # Which frequencies to calculate phase for
-f_mod_centers = np.logspace(np.log10(4), np.log10(20), 10)
-f_mod_width = f_mod_centers / 6
-##f_mod_centers = np.logspace(np.log10(4), np.log10(20), 5)
-##f_mod_width = f_mod_centers / 4
+f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_width = f_mod_centers / 8
 f_mod = np.tile(f_mod_width, [2, 1]).T \
             * np.tile([-1, 1], [len(f_mod_centers), 1]) \
             + np.tile(f_mod_centers, [2, 1]).T
 
 # Which frequencies to calculate power for
-f_car = np.arange(20, 100, 5)
-##f_car = np.arange(20, 100, 10)
-
-save_fname = f"{data_dir}mi_comod/bw{int(f_car_bw)}_nbins{n_phase_bins}.npz"
+f_car = np.arange(20, 100, 10)
 
 f_car_bw = 10 # Bandwidth of the HF bandpass filter
 n_phase_bins = 8 # Number of bins for the phase-difference
 n_jobs = 3 # How many parallel jobs to run
+
+save_fname = f"{data_dir}mi_comod/bw{int(f_car_bw)}_nbins{n_phase_bins}.npz"
 
 def mi_fnc(fn):
     """ Helper function for parallel computation
