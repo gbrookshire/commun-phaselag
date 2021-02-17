@@ -850,6 +850,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
     predicts future A and B); but conditioning on LB does not reduce the CMI
     when LB does not predict A or B.
 
+    Using the transfer entropy calculation (calc_type = 2), A-->B leads the
+    first output [I(LA;B|LB)] to be greater than the second [I(A;LB|LA)]. This
+    leads to a positive blob in the difference comodulogram.
+
     s_a, s_b : np.ndarray
         The signals
     cmi_lag : float, seq of floats
