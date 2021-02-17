@@ -430,10 +430,17 @@ plt.savefig(f'{plot_dir}{fname}.png')
 ###########################################
 # Communication based on transfer entropy #
 ###########################################
+'''
+Signal 1: CA3
+Signal 2: CA1
+A positive TE difference indicates CA3 --> CA1.
+A negative TE difference indicates CA1 --> CA3.
+'''
 
 # Which frequencies to calculate phase for
 f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
-f_mod_width = f_mod_centers / 8
+f_mod_width_ratio = 4
+f_mod_width = f_mod_centers / f_mod_width_ratio
 f_mod = np.tile(f_mod_width, [2, 1]).T \
             * np.tile([-1, 1], [len(f_mod_centers), 1]) \
             + np.tile(f_mod_centers, [2, 1]).T
@@ -441,9 +448,13 @@ f_mod = np.tile(f_mod_width, [2, 1]).T \
 # Which frequencies to calculate power for
 f_car = np.arange(20, 150, 10)
 
+# HF filter varies with center frequency
+# Keep 20 Hz bandwidth at 80 Hz (~ 7 cycles)
+f_car_bw = f_car / 80 * 20
+
 # Parameters for the MI phase-lag analysis
 mi_params = dict(f_mod=f_mod, f_car=f_car,
-                 f_car_bw=20, n_bins=2**4,
+                 f_car_bw=f_car_bw, n_bins=2**4,
                  calc_type=2,
                  method='sine psd')
 #for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
@@ -475,25 +486,40 @@ save_fname = f"{data_dir}te/te_{now}.npz"
 np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
 
 # Load the saved data
+save_fname = f"{data_dir}te/te_2021-02-16-1559.npz"
 saved_data = np.load(save_fname, allow_pickle=True)
 te_out = saved_data.get('te')
 mi_params = saved_data.get('mi_params').item()
 lag_sec = saved_data.get('lag_sec')
 f_mod_centers = np.mean(mi_params['f_mod'], axis=1)
+f_car = mi_params['f_car']
 
 te_a = np.array([x[:,:,0,0] for x in te_out])
 te_b = np.array([x[:,:,0,1] for x in te_out])
 te_diff = te_a - te_b
+te = {'a': te_a,
+      'b': te_b,
+      'diff': te_diff}
 
 # Plot it
 def plot_contour(x):
-    #plt.contourf(f_mod_centers, f_car, x.T, **kwargs)
-    levels = np.linspace(-np.max(np.abs(x)), np.max(np.abs(x)), 50)
-    plt.contourf(f_mod_centers, f_car[2:], x.T,
+    max_abs = np.max(np.abs(x))
+    max_abs = np.max(np.abs(x[:, 2:]))
+    if x.min() < 0:
+        levels = np.linspace(-max_abs, max_abs, 50)
+        cm = plt.cm.RdBu_r
+        ticks = [-max_abs, 0, max_abs]
+    else:
+        levels = np.linspace(0, max_abs, 50)
+        cm = plt.cm.viridis
+        ticks = [0, max_abs]
+    x[x > max_abs] = max_abs
+    x[x < -max_abs] = -max_abs
+    plt.contourf(f_mod_centers, f_car, x.T,
                  levels=levels,
-                 cmap=plt.cm.RdBu_r)
-    cb = plt.colorbar(format='%.2f', ticks=[0])
-    cb.ax.set_ylabel('TE diff')
+                 cmap=cm)
+    cb = plt.colorbar(format='%.0e', ticks=ticks)
+    cb.ax.set_ylabel('TE diff (bits)')
     plt.ylabel('Amp freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
 
@@ -501,19 +527,51 @@ def subset_freqs(x):
     return x[:, f_car >= 40]
 
 # Plot it for each rat
-for n, fn in enumerate(fnames):
-    plt.subplot(3, 3, n + 1)
-    plot_contour(subset_freqs(np.squeeze(te_diff[n, :, :])))
-    plt.title(re.search('Rat[0-9]+', fn).group())
-# Plot the average
-plt.subplot(3, 3, len(fnames) + 1)
-avg = subset_freqs(np.squeeze(np.mean(te_diff, axis=0)))
-plot_contour(avg)
-plt.title('Average')
+for direction in te.keys():
+    x = te[direction]
+    plt.figure(figsize=(8, 5))
+    plt.clf()
+    for n, fn in enumerate(fnames):
+        plt.subplot(3, 3, n + 1)
+        plot_contour(np.squeeze(x[n, :, :]))
+        plt.title(re.search('Rat[0-9]+', fn).group())
+    # Plot the average
+    plt.subplot(3, 3, len(fnames) + 1)
+    avg = np.squeeze(np.mean(x, axis=0))
+    plot_contour(avg)
+    plt.title('Average')
 
-plt.tight_layout()
+    plt.tight_layout()
 
-fname = f"te_diff"
-plt.savefig(f'{plot_dir}{fname}.png')
+    data_timestamp = save_fname[save_fname.find('2'):-4]
+    fname = f"te_{data_timestamp}_{direction}"
+    plt.savefig(f'{plot_dir}{fname}.png')
 
 
+# Plot the impulse responses for the HF BP-filters
+
+fs = 2000 # Sampling rate in Hz
+impulse_dur = 0.5 # seconds
+impulse_len = int(impulse_dur * fs) # samples
+t = np.arange(impulse_len) / fs # Time vector in seconds
+t -= t.mean()
+
+impulse = np.zeros(impulse_len)
+impulse[impulse_len // 2] = 1
+
+f_car = [20, 80]
+f_car_bw = [5, 20]
+
+plt.clf()
+for i_bw, bw in enumerate(f_car_bw):
+    plt.subplot(2, 1, i_bw + 1)
+    plt.title(f"BW: {bw} Hz")
+    for f in f_car:
+        f_low = f - (bw / 2)
+        f_high = f + (bw / 2)
+        ir = comlag.bp_filter(impulse, f_low, f_high, fs)
+        plt.plot(t, ir, label=f)
+    if i_bw == len(f_car_bw) - 1:
+        plt.legend(title='Frequency')
+
+plt.savefig(f'{plot_dir}filter_kernels.png')
