@@ -838,9 +838,11 @@ def mod_index(x, method):
     return mi_comod
 
 
-def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
-                                 f_car_bw=5, n_bins=18, method='sine psd',
-                                 calc_type=None):
+def cfc_phaselag_transferentropy(s_a, s_b, fs,
+                                 f_mod, f_mod_bw,
+                                 f_car, f_car_bw,
+                                 lag, n_bins, 
+                                 method='sine psd', calc_type=2):
     """
     Compute conditional mutual information between two signals, and lagged
     copies of those two signals.
@@ -854,10 +856,35 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
     first output [I(LA;B|LB)] to be greater than the second [I(A;LB|LA)]. This
     leads to a positive blob in the difference comodulogram.
 
-    s_a, s_b : np.ndarray
-        The signals
-    cmi_lag : float, seq of floats
-        The lags to test between the two variables. Should be positive numbers.
+    Parameters
+    ----------
+
+    s_a, s_b : np.ndarray (time,)
+        The two signals
+    fs : scalar (int, float)
+        The sampling rate of the signals
+    f_mod : list, nd.array
+        The center frequencies of the low-frequency bandpass filters (in Hz)
+    f_mod_bw : scalar (int, float) or sequence (list or np.ndarray)
+        The bandwidth of the low-frequency bandpass filters (in Hz)
+    f_car : list, nd.array
+        The center frequencies of the high-frequency bandpass filters (in Hz)
+    f_car_bw : scalar (int, float) or sequence (list or np.ndarray)
+        The bandwidth of the low-frequency bandpass filters (in Hz)
+    lag : sequence of ints
+        The lags (in samples) to test between the two variables. Should be
+        positive integers.
+    n_bins : int
+        The number of phase-difference bins
+    method : str
+        The method to use to test for phase-dependence of communication. Must
+        be a value accepted by mod_index().
+    calc_type : int
+        How to calculate the directionality. 
+        1: Mutual information conditioned on a lagged copy of each signal
+            I(A;B|LA) and I(A;B|LB)
+        2: Transfer entropy
+            I(LA;B|LB) and I(A;LB|LA)
         
     """
     #TODO Test whether when B-->A, you need a negative lag (I expect not)
@@ -872,17 +899,27 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
     if type(f_car_bw) in (float, int):
         f_car_bw = np.ones(f_car.shape) * f_car_bw
 
+    assert type(f_mod_bw) in (float, int, np.ndarray), \
+            "f_mod_bw must be a scalar or a numpy array"
+    if type(f_mod_bw) in (float, int):
+        f_mod_bw = np.ones(f_mod.shape) * f_mod_bw
 
     # Initialize mutual information array
     # Dims: LF freq, HF freq, CMI lag, direction, LF phase bin
-    mi = np.full([len(f_mod), len(f_car), len(cmi_lag), 2, n_bins], np.nan)
+    mi = np.full([len(f_mod), len(f_car), len(lag), 2, n_bins], np.nan)
     # Initialize array to hold the number of observations in each bin
     counts = np.full([len(f_mod), n_bins], np.nan)
 
-    for i_fm, fm in enumerate(f_mod):
-        print(fm)
+    for i_fm in range(len(f_mod)):
         # Compute the LF phase-difference of each signal
-        filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
+        fm = f_mod[i_fm]
+        fm_bw = f_mod_bw[i_fm]
+        print(fm)
+        filt = {sig: bp_filter(s[sig].T,
+                               fm - (fm_bw / 2),
+                               fm + (fm_bw / 2),
+                               fs,
+                               2).T
                     for sig in 'ab'}
         phase = {sig: np.angle(hilbert(filt[sig], axis=0))
                     for sig in 'ab'}
@@ -892,11 +929,13 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
         # Append trials over time if data includes multiple trials
         phase_diff = np.ravel(phase_diff, 'F')
 
-        for i_fc, fc in enumerate(f_car):
+        for i_fc in range(len(f_car)):
             # Filter the HF signals
+            fc = f_car[i_fc]
+            fc_bw = f_car_bw[i_fc]
             filt = {sig: bp_filter(s[sig].T,
-                                   fc - (f_car_bw[i_fc] / 2),
-                                   fc + (f_car_bw[i_fc] / 2),
+                                   fc - (fc_bw / 2),
+                                   fc + (fc_bw / 2),
                                    fs, 2).T
                         for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
@@ -912,8 +951,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
                 if i_fc == 0:
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
                 # Compute CMI in each direction
-                for i_lag, lag in enumerate(cmi_lag):
-                    L = lambda x: np.roll(x, int(lag), axis=1) # Lag function
+                for i_lag in range(len(lag)):
+                    L = lambda x: np.roll(x, lag[i_lag], axis=1) # Lag function
                     if calc_type == 1:
                         # Compute I(A;B|LA) and I(A;B|LB)
                         for i_direc, direc in enumerate('ab'):
@@ -935,6 +974,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
     return mi_comod
+
 
 def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
     """

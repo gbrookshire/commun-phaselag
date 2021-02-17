@@ -981,6 +981,70 @@ for leakage in cross_talk_levels:
 # Communication based on Transfer-entropy #
 ###########################################
 
+# Low-freq 'modulator' frequencies
+f_mod = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_bw = f_mod / 8
+
+# High-freq 'carrier' frequencies
+f_car = np.arange(20, 100, 10)
+f_car_bw = f_car / 4
+
+# Parameters for the simulated signals
+sim_params = dict(dur=100,
+                  fs=1000,
+                  noise_amp=0.01,
+                  common_noise_amp=0.0)
+
+# Parameters for the MI phase-lag analysis
+mi_params = dict(fs=sim_params['fs'],
+                 f_mod=f_mod,
+                 f_mod_bw=f_mod_bw,
+                 f_car=f_car,
+                 f_car_bw=f_car_bw,
+                 lag=[15],
+                 n_bins=2**4,
+                 method='sine psd',
+                 calc_type=2)
+
+# Simulate signals
+t, s_a, s_b = simulate.sim(**sim_params)
+
+# Compute transfer entropy
+te_full = comlag.cfc_phaselag_transferentropy(s_a, s_b, **mi_params)
+
+# Get the difference in MI between conditioning on past A vs past B
+te = {'a': te_full[:, :, 0, 0],
+      'b': te_full[:, :, 0, 1]}
+te['diff'] = te['a'] - te['b']
+
+plt.figure(figsize=(9, 3))
+for n_plot, lagged_sig in enumerate('ab'):
+    plt.subplot(1, 3, 1 + n_plot)
+    x = te[lagged_sig]
+    plt.contourf(f_mod_centers, f_car, x.T)
+    cb = plt.colorbar(format='%.2f')
+    cb.ax.set_ylabel('I (bits)')
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+    plt.title(f'Lagged: {lagged_sig}')
+
+plt.subplot(1, 3, 3)
+x = te['diff']
+levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
+plt.contourf(f_mod_centers, f_car, x.T,
+            levels=levels,
+            cmap=plt.cm.RdBu_r)
+cb = plt.colorbar(format='%.2f')
+cb.ax.set_ylabel('Diff (bits)')
+plt.ylabel('HF freq (Hz)')
+plt.xlabel('Phase freq (Hz)')
+plt.tight_layout()
+
+
+
+
+###### OLD VERSION
+
 # Which frequencies to calculate phase for
 f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
 f_mod_width = f_mod_centers / 8
@@ -1111,6 +1175,5 @@ for leakage in cross_talk_levels:
         plt.close('all')
 
 !notify-send 'Analyses finished'
-
 
 
