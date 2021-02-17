@@ -863,6 +863,12 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
 
     assert calc_type in (1, 2)
 
+    assert type(f_car_bw) in (float, int, np.ndarray), \
+            "f_car_bw must be a scalar or a numpy array"
+    if type(f_car_bw) in (float, int):
+        f_car_bw = np.ones(f_car.shape) * f_car_bw
+
+
     # Initialize mutual information array
     # Dims: LF freq, HF freq, CMI lag, direction, LF phase bin
     mi = np.full([len(f_mod), len(f_car), len(cmi_lag), 2, n_bins], np.nan)
@@ -885,8 +891,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs, f_mod, f_car, cmi_lag,
         for i_fc, fc in enumerate(f_car):
             # Filter the HF signals
             filt = {sig: bp_filter(s[sig].T,
-                                   fc - (f_car_bw / 2),
-                                   fc + (f_car_bw / 2),
+                                   fc - (f_car_bw[i_fc] / 2),
+                                   fc + (f_car_bw[i_fc] / 2),
                                    fs, 2).T
                         for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
