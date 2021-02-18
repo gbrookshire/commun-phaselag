@@ -847,7 +847,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     Compute conditional mutual information between two signals, and lagged
     copies of those two signals.
 
-    When A-->B, I(A;B|LA) << I(A;B|LB). This happens because conditioning on LA
+    Using the conditional mutual information calculations (calc_type = 2), when
+    A-->B, I(A;B|LA) << I(A;B|LB). This happens because conditioning on LA
     reduces the CMI when LA predicts both A and B independently (i.e. past A
     predicts future A and B); but conditioning on LB does not reduce the CMI
     when LB does not predict A or B.
