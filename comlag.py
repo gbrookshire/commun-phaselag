@@ -23,6 +23,7 @@ import copy
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert, fftconvolve
 from scipy import stats, optimize
+from skimage import measure
 import statsmodels.api as sm
 import gcmi
 
@@ -844,6 +845,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  f_car, f_car_bw,
                                  lag, n_bins, 
                                  n_perm=0, min_shift=None, max_shift=None,
+                                 cluster_alpha=0.05,
                                  method='sine psd', calc_type=2):
     """
     Compute conditional mutual information between two signals, and lagged
@@ -902,6 +904,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     min_shift, max_shift : int
         The minimum and maximum number of samples to shift by when performing
         random permutation tests
+    cluster_alpha : float
+        The alpha threshold for including values in the clusters.
     method : str
         The method to use to test for phase-dependence of communication. Must
         be a value accepted by mod_index().
@@ -1016,7 +1020,48 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
-    return mi_comod
+
+    # Get clusters and p-values
+    if n_perm > 0:
+        diff_mi_comod = mi_comod[..., 0] - mi_comod[..., 1]
+        z_thresh = stats.norm.isf(cluster_alpha / 2) # / 2 for 2-tailed test
+        z_mi_comod = stats.zscore(diff_mi_comod, axis=0)
+        thresh_mi_comod = np.abs(z_mi_comod) > z_thresh
+        # Find clusters for each permutation, including the empirical data
+        clust_labels = np.full(thresh_mi_comod.shape, np.nan)
+        for i_perm in range(n_perm + 1):
+            for i_lag in range(len(lag)):
+                c_labs = measure.label(thresh_mi_comod[i_perm, :, :, i_lag])
+                clust_labels[i_perm, :, :, i_lag] = c_labs
+        # Get the cluster stat for each cluster
+        clust_stat_fun = lambda x: np.abs(np.sum(x))
+        cluster_stats = []
+        for i_perm in range(n_perm + 1): # For each perm, including the emp data
+            max_cluster_stat = 0
+            if len(lag) > 1:
+                raise NotImplementedError
+                # This currently ignores multiple lags
+            for i_lag in range(len(lag)):
+                labels = clust_labels[i_perm, :, :, i_lag]
+                for i_clust in range(1, int(np.max(labels)) + 1):
+                    # Select the z-values in the cluster
+                    x = z_mi_comod[i_perm, :, :, i_lag]
+                    x = x[labels == i_clust]
+                    s = clust_stat_fun(x)
+                    if s > max_cluster_stat:
+                        max_cluster_stat = s
+            cluster_stats.append(max_cluster_stat)
+        cluster_stats = np.array(cluster_stats)
+        # Compute the p-value
+        pval = np.mean(cluster_stats[1:] > cluster_stats[0])
+        # Package the cluster stat results
+        clust_stat_info = dict(labels=clust_labels[0, ...],
+                               pval=pval)
+        return mi_comod, clust_stat_info
+
+    else:
+        return mi_comod
+
 
 
 def cfc_phaselag_transferentropy_OLD(s_a, s_b, fs,
