@@ -939,6 +939,12 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         if max_shift is None:
             max_shift = len(s['a'])
 
+        # Cluster analysis currently ignores multiple lags
+        if len(lag) > 1: 
+            raise NotImplementedError
+        else:
+            i_lag = 0
+
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
     mi = np.full([n_perm + 1, len(f_mod), len(f_car), len(lag), 2, n_bins],
@@ -987,15 +993,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 if i_fc == 0:
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
 
-                # Randomly shift the two HF time-series 
+                # Randomly shift the HF time-series 
                 for i_perm in range(n_perm + 1):
                     sig_2d = copy.deepcopy(sig_2d_orig)
-                    if i_perm > 0:
-                        for sig in 'ab':
-                            shift = np.random.randint(min_shift, max_shift)
-                            sig_2d[sig] = np.roll(sig_2d[sig],
-                                                  shift,
-                                                  axis=1)
+                    if i_perm > 0: # Don't shift the real data
+                        # Shift signal A
+                        sig_2d['a'] = np.roll(sig_2d['a'],
+                                              np.random.randint(min_shift,
+                                                                max_shift),
+                                              axis=1)
                     # Compute CMI in each direction
                     for i_lag in range(len(lag)):
                         L = lambda x: np.roll(x, lag[i_lag], axis=1) # Lag function
@@ -1023,39 +1029,53 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
     # Get clusters and p-values
     if n_perm > 0:
+
         diff_mi_comod = mi_comod[..., 0] - mi_comod[..., 1]
-        z_thresh = stats.norm.isf(cluster_alpha / 2) # / 2 for 2-tailed test
-        z_mi_comod = stats.zscore(diff_mi_comod, axis=0)
-        thresh_mi_comod = np.abs(z_mi_comod) > z_thresh
+
+        # Threshold data for clustering by finding phase-lag TE differences
+        # that are less than the percentiles defined by the cluster alpha value
+        quantiles = [100 * (cluster_alpha / 2),
+                     100 * (1 - (cluster_alpha / 2))]
+        thresh = np.percentile(diff_mi_comod, quantiles)
+        thresh_mi_comod = (diff_mi_comod<thresh[0]) | (diff_mi_comod>thresh[1])
+
+        # Cluster statistic: Summed absolute z-score
+        z_mi_comod = stats.zscore(diff_mi_comod, axis=None)
+        stat_fun = lambda x: np.sum(np.abs(x))
+
         # Find clusters for each permutation, including the empirical data
         clust_labels = np.full(thresh_mi_comod.shape, np.nan)
-        for i_perm in range(n_perm + 1):
-            for i_lag in range(len(lag)):
-                c_labs = measure.label(thresh_mi_comod[i_perm, :, :, i_lag])
-                clust_labels[i_perm, :, :, i_lag] = c_labs
-        # Get the cluster stat for each cluster
-        clust_stat_fun = lambda x: np.abs(np.sum(x))
         cluster_stats = []
-        for i_perm in range(n_perm + 1): # For each perm, including the emp data
-            max_cluster_stat = 0
-            if len(lag) > 1:
-                raise NotImplementedError
-                # This currently ignores multiple lags
-            for i_lag in range(len(lag)):
-                labels = clust_labels[i_perm, :, :, i_lag]
-                for i_clust in range(1, int(np.max(labels)) + 1):
-                    # Select the z-values in the cluster
-                    x = z_mi_comod[i_perm, :, :, i_lag]
-                    x = x[labels == i_clust]
-                    s = clust_stat_fun(x)
-                    if s > max_cluster_stat:
-                        max_cluster_stat = s
-            cluster_stats.append(max_cluster_stat)
-        cluster_stats = np.array(cluster_stats)
+        for i_perm in range(n_perm + 1):
+            # Find the clusters
+            c_labs = measure.label(thresh_mi_comod[i_perm, :, :, i_lag])
+            clust_labels[i_perm, :, :, i_lag] = c_labs
+            # Get the cluster stat for each cluster
+            perm_cluster_stat = []
+            labels = clust_labels[i_perm, :, :, i_lag]
+            for i_clust in range(1, int(np.max(labels)) + 1):
+                # Select the z-values in the cluster
+                x = z_mi_comod[i_perm, :, :, i_lag]
+                x = x[labels == i_clust]
+                s = stat_fun(x)
+                perm_cluster_stat.append(s)
+            cluster_stats.append(perm_cluster_stat)
+
         # Compute the p-value
-        pval = np.mean(cluster_stats[1:] > cluster_stats[0])
+        max_stat_per_perm = []
+        for perm in cluster_stats:
+            if len(perm) > 0:
+                max_stat_per_perm.append(np.max(perm))
+            else:
+                max_stat_per_perm.append(0)
+        cluster_thresh = np.percentile(max_stat_per_perm, [95])
+        pval = np.mean(max_stat_per_perm[1:] > max_stat_per_perm[0])
+
         # Package the cluster stat results
         clust_stat_info = dict(labels=clust_labels[0, ...],
+                               stats=cluster_stats[0],
+                               cluster_thresh=cluster_thresh,
+                               max_per_perm=max_stat_per_perm,
                                pval=pval)
         return mi_comod, clust_stat_info
 
