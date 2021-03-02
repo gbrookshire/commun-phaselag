@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""
+Call with:
+for iRat in {0..7}
+do
+    sbatch_submit.py \
+        -s 'source load_python-simulated_rhythmic_sampling.sh' \
+        -i "python sbatch_rat.py $iRat" \
+        -t 1-00:00:00 -m 10G -d ../slurm_results/
+done
+"""
+
+
 
 import sys
 import numpy as np
@@ -38,9 +50,10 @@ mi_params = dict(f_mod=f_mod,
                  min_shift=None, max_shift=None, cluster_alpha=0.05,
                  calc_type=2)
 
-def te_fnc(fn):
+def te_fnc(i_rat):
     """ Helper function for parallel computation
     """
+    fn = fnames[i_rat]
     print(fn)
     # Load the data
     d = loadmat(data_dir + fn)
@@ -53,7 +66,7 @@ def te_fnc(fn):
                                                  lag=[lag],
                                                  **mi_params)
     # Save the data
-    save_fname = f"{data_dir}te/te_{now}.npz"
+    save_fname = f"{data_dir}te/te_{now}_rat{i_rat}.npz"
     np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
 
 
@@ -62,6 +75,5 @@ if __name__ == '__main__':
     assert i_rat.isnumeric(), \
             f'arg must be the index of the animal, got "{i_rat}"'
     i_rat = int(i_rat)
-    fn = fnames[i_rat]
-    te_fnc(fn)
+    te_fnc(i_rat)
 
