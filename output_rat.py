@@ -451,6 +451,17 @@ f_car = np.arange(20, 150, 10)
 # HF filter varies with center frequency
 # Keep 20 Hz bandwidth at 80 Hz (~ 7 cycles)
 f_car_bw = f_car / 80 * 20
+# Plot the lowest and highest frequencies for the LF and HF filters
+plt.clf()
+i_plot = 1
+for f_center, f_bw in ([f_mod, f_mod_bw], [f_car, f_car_bw]):
+    for i_freq in [0, -1]: # Plot the first and last ones
+        plt.subplot(4, 1, i_plot)
+        f_low = f_center[i_freq] - (f_bw[i_freq] / 2)
+        f_high = f_center[i_freq] + (f_bw[i_freq] / 2)
+        comlag.plot_filter_kernel(f_low, f_high, 2000, 1.0)
+        i_plot += 1
+plt.tight_layout()
 
 # Parameters for the MI phase-lag analysis
 mi_params = dict(f_mod=f_mod, f_car=f_car,

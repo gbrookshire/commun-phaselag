@@ -1763,6 +1763,27 @@ def bp_filter(data, lowcut, highcut, fs, order=2):
     return y
 
 
+def plot_filter_kernel(lowcut, highcut, fs, dur, **plot_kwargs):
+    """
+    Plot the filter kernels.
+
+    Parameters
+    ----------
+    lowcut, highcut, fs : Passed on to bp_filter
+    dur : float
+        Duration of the impulse calculated in seconds.
+    """
+    impulse_len = int(dur * fs) # samples
+    t = np.arange(impulse_len) / fs # Time vector in seconds
+    t -= t.mean()
+
+    impulse = np.zeros(impulse_len)
+    impulse[impulse_len // 2] = 1
+
+    plt.title(f"{lowcut:.2f}-{highcut:.2f} Hz")
+    ir = bp_filter(impulse, lowcut, highcut, fs)
+    plt.plot(t, ir, **plot_kwargs)
+    return ir
 
 
 #############
