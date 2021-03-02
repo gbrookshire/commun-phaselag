@@ -1027,20 +1027,25 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
 
+    # Get the difference between directions
+    mi_comod = {'a': mi_comod[..., 0],
+                'b': mi_comod[..., 1]}
+    mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
+
     # Get clusters and p-values
     if n_perm > 0:
-
-        diff_mi_comod = mi_comod[..., 0] - mi_comod[..., 1]
 
         # Threshold data for clustering by finding phase-lag TE differences
         # that are less than the percentiles defined by the cluster alpha value
         quantiles = [100 * (cluster_alpha / 2),
                      100 * (1 - (cluster_alpha / 2))]
-        thresh = np.percentile(diff_mi_comod, quantiles)
-        thresh_mi_comod = (diff_mi_comod<thresh[0]) | (diff_mi_comod>thresh[1])
+        thresh = np.percentile(mi_comod['diff'], quantiles)
+        thresh_mi_comod = np.zeros(mi_comod['diff'].shape)
+        thresh_mi_comod[mi_comod['diff'] < thresh[0]] = -1
+        thresh_mi_comod[mi_comod['diff'] > thresh[1]] = 1
 
         # Cluster statistic: Summed absolute z-score
-        z_mi_comod = stats.zscore(diff_mi_comod, axis=None)
+        z_mi_comod = stats.zscore(mi_comod['diff'], axis=None)
         stat_fun = lambda x: np.sum(np.abs(x))
 
         # Find clusters for each permutation, including the empirical data
@@ -1789,12 +1794,6 @@ def plot_filter_kernel(lowcut, highcut, fs, dur, **plot_kwargs):
 #############
 # SKETCHPAD # 
 #############
-
-# Fit a single peak that wraps in phase with each signal 
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D # for projection='3d'
-import scipy
 
 
 '''
