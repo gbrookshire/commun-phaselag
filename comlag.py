@@ -927,14 +927,14 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
     assert calc_type in (1, 2)
 
-    assert type(f_car_bw) in (float, int, np.ndarray), \
+    assert isinstance(f_car_bw, (float, int, np.ndarray)), \
             "f_car_bw must be a scalar or a numpy array"
-    if type(f_car_bw) in (float, int):
+    if isinstance(f_car_bw, (float, int)):
         f_car_bw = np.ones(f_car.shape) * f_car_bw
 
-    assert type(f_mod_bw) in (float, int, np.ndarray), \
+    assert isinstance(f_mod_bw, (float, int, np.ndarray)), \
             "f_mod_bw must be a scalar or a numpy array"
-    if type(f_mod_bw) in (float, int):
+    if isinstance(f_mod_bw, (float, int)):
         f_mod_bw = np.ones(f_mod.shape) * f_mod_bw
 
     if decimate is None:
@@ -1805,6 +1805,7 @@ def plot_filter_kernel(lowcut, highcut, fs, dur, **plot_kwargs):
     dur : float
         Duration of the impulse calculated in seconds.
     """
+    import matplotlib.pyplot as plt
     impulse_len = int(dur * fs) # samples
     t = np.arange(impulse_len) / fs # Time vector in seconds
     t -= t.mean()
