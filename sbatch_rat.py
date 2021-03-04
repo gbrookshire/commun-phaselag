@@ -30,12 +30,17 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
 # Low-freq 'modulator' frequencies
-f_mod = np.logspace(np.log10(4), np.log10(20), 10)
-f_mod_bw = f_mod / 2
+# Jiang et al (2015): "a choice of 3-5 cycles in relation to the slower
+# oscillation is sensible"
+f_mod = np.arange(4, 21)
+f_mod_bw = f_mod / 2.5 # ~4 cycles
 
 # High-freq 'carrier' frequencies
+# Jiang et al (2015): "a range of 4 to 6 cycles is appropriate when analyzing
+# how gamma band power is related to the phase of slower oscillations."
 f_car = np.arange(30, 150, 10)
-f_car_bw = f_car / 4
+f_car_bw = f_car / 3 # ~5 cycles
+
 
 # Parameters for the MI phase-lag analysis
 n_jobs = len(fnames)
@@ -44,8 +49,9 @@ mi_params = dict(f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
                  f_car=f_car,
                  f_car_bw=f_car_bw,
-                 n_bins=2**4,
+                 n_bins=2**3,
                  method='sine psd',
+                 decimate=4,
                  n_perm=100,
                  min_shift=None, max_shift=None, cluster_alpha=0.05,
                  calc_type=2)
@@ -58,6 +64,7 @@ def te_fnc(i_rat):
     # Load the data
     d = loadmat(data_dir + fn)
     s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    s = [signal.decimate(sig, downsamp_factor) for sig in s] # Downsample
     fs = d['Fs'][0][0]
     lag = int(lag_sec * fs)
     # Run the analysis
