@@ -9,7 +9,7 @@ import comlag
 
 plt.ion()
 
-data_dir = '../data/RatData/'
+data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/data/RatData/'
 plot_dir = data_dir + 'plots/'
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat6_20111021_begin1.mat',
