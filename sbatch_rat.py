@@ -6,7 +6,7 @@ do
     sbatch_submit.py \
         -s 'source load_python-simulated_rhythmic_sampling.sh' \
         -i "python sbatch_rat.py $iRat" \
-        -t 1-00:00:00 -m 10G -d ../slurm_results/
+        -t 24:00:00 -m 10G -d ../slurm_results/
 done
 """
 
@@ -44,7 +44,7 @@ f_car_bw = f_car / 3 # ~5 cycles
 
 # Parameters for the MI phase-lag analysis
 n_jobs = len(fnames)
-lag_sec = 0.005 # By eyeballing the plot of high-gamma cross-MI
+lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
                  f_car=f_car,
