@@ -437,20 +437,18 @@ A positive TE difference indicates CA3 --> CA1.
 A negative TE difference indicates CA1 --> CA3.
 '''
 
-# Which frequencies to calculate phase for
-f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
-f_mod_width_ratio = 4
-f_mod_width = f_mod_centers / f_mod_width_ratio
-f_mod = np.tile(f_mod_width, [2, 1]).T \
-            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
-            + np.tile(f_mod_centers, [2, 1]).T
+# Low-freq 'modulator' frequencies
+# Jiang et al (2015): "a choice of 3-5 cycles in relation to the slower
+# oscillation is sensible"
+f_mod = np.arange(4, 21)
+f_mod_bw = f_mod / 2.5 # ~4 cycles
 
-# Which frequencies to calculate power for
-f_car = np.arange(20, 150, 10)
+# High-freq 'carrier' frequencies
+# Jiang et al (2015): "a range of 4 to 6 cycles is appropriate when analyzing
+# how gamma band power is related to the phase of slower oscillations."
+f_car = np.arange(30, 150, 10)
+f_car_bw = f_car / 3 # ~5 cycles
 
-# HF filter varies with center frequency
-# Keep 20 Hz bandwidth at 80 Hz (~ 7 cycles)
-f_car_bw = f_car / 80 * 20
 # Plot the lowest and highest frequencies for the LF and HF filters
 plt.clf()
 i_plot = 1
@@ -459,30 +457,36 @@ for f_center, f_bw in ([f_mod, f_mod_bw], [f_car, f_car_bw]):
         plt.subplot(4, 1, i_plot)
         f_low = f_center[i_freq] - (f_bw[i_freq] / 2)
         f_high = f_center[i_freq] + (f_bw[i_freq] / 2)
-        comlag.plot_filter_kernel(f_low, f_high, 2000, 1.0)
+        comlag.plot_filter_kernel(f_low, f_high, 2000, 1.5)
         i_plot += 1
 plt.tight_layout()
 
 # Parameters for the MI phase-lag analysis
-mi_params = dict(f_mod=f_mod, f_car=f_car,
-                 f_car_bw=f_car_bw, n_bins=2**4,
-                 calc_type=2,
-                 method='sine psd')
-#for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
-
-lag_sec = 0.005 # By eyeballing the plot of high-gamma cross-MI
 n_jobs = 3
+lag_sec = 0.005 # By eyeballing the plot of high-gamma cross-MI
+mi_params = dict(f_mod=f_mod,
+                 f_mod_bw=f_mod_bw,
+                 f_car=f_car,
+                 f_car_bw=f_car_bw,
+                 n_bins=2**3,
+                 method='sine psd',
+                 n_perm=100,
+                 min_shift=None, max_shift=None, cluster_alpha=0.05,
+                 calc_type=2)
+
 
 def te_fnc(fn):
     """ Helper function for parallel computation
     """
+    downsamp_factor = 4
     d = loadmat(data_dir + fn)
     s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    s = [signal.decimate(sig, downsamp_factor) for sig in s] # Downsample
     fs = d['Fs'][0][0]
-    lag_samp = lag_sec * fs
-    s_a, s_b = s; cmi_lag=[lag_samp]
-    te_full = comlag.cfc_phaselag_transferentropy(s[0], s[1], fs,
-                                                  cmi_lag=[lag_samp],
+    lag = int(lag_sec * fs)
+    te_full = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                  fs=fs,
+                                                  lag=[lag],
                                                   **mi_params)
     ##te = {'a': te_full[:, :, 0, 0],
     ##      'b': te_full[:, :, 0, 1]}
@@ -497,7 +501,7 @@ save_fname = f"{data_dir}te/te_{now}.npz"
 np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
 
 # Load the saved data
-save_fname = f"{data_dir}te/te_2021-02-16-1559.npz"
+#save_fname = f"{data_dir}te/te_2021-02-16-1559.npz"
 saved_data = np.load(save_fname, allow_pickle=True)
 te_out = saved_data.get('te')
 mi_params = saved_data.get('mi_params').item()
@@ -530,7 +534,7 @@ def plot_contour(x):
                  levels=levels,
                  cmap=cm)
     cb = plt.colorbar(format='%.0e', ticks=ticks)
-    cb.ax.set_ylabel('TE diff (bits)')
+    cb.ax.set_ylabel('Sine power (bits$^2$)')
     plt.ylabel('Amp freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
 
@@ -559,6 +563,53 @@ for direction in te.keys():
     plt.savefig(f'{plot_dir}{fname}.png')
 
 
+# Plot analyses that were run in sbatch on the Bluebear cluster
+
+# Load data from the cluster
+timestamp = '2021-03-01-1335'
+te_all = []
+mi_params_all = []
+lag_sec_all = []
+plt.figure(figsize=(8, 5))
+for i_rat in range(len(fnames)):
+    fn = f"te_{timestamp}_rat{i_rat}.npz"
+    saved_data = np.load(f"{data_dir}te/{fn}",
+                         allow_pickle=True)
+    te_full, clust_stat_info = saved_data.get('te')
+    mi_params = saved_data.get('mi_params').item()
+    lag_sec = saved_data.get('lag_sec')
+
+    te = {'a': te_full[..., 0, 0],
+      'b': te_full[..., 0, 1]}
+    te['diff'] = te['a'] - te['b']
+
+    x = te['diff'][0, ...] # Plot the empirical data
+
+    plt.subplot(3, 3, i_rat + 1)
+
+    levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
+    plt.contourf(mi_params['f_mod'],
+                 mi_params['f_car'],
+                 x.T,
+                 levels=levels,
+                 cmap=plt.cm.RdBu_r)
+    cb = plt.colorbar(format='%.2f')
+    # Plot significant clusters
+    clust_labels = clust_stat_info['labels'][:,:,0]
+    signif_clusters = np.nonzero(
+            np.array(clust_stat_info['stats']) > clust_stat_info['cluster_thresh'])
+    clust_highlight = np.isin(clust_labels, 1 + signif_clusters[0]).astype(int)
+    plt.contour(mi_params['f_mod'],
+                mi_params['f_car'],
+                clust_highlight.T,
+                levels=[0.5])
+                #colors='black')
+    cb.ax.set_ylabel('bits $^2$')
+    plt.ylabel('HF freq (Hz)')
+    plt.xlabel('Phase freq (Hz)')
+    plt.title(f'p = {clust_stat_info["pval"]:.3f}')
+
+    
 # Plot the impulse responses for the HF BP-filters
 
 fs = 2000 # Sampling rate in Hz
