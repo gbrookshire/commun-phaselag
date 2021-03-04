@@ -844,6 +844,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  f_mod, f_mod_bw,
                                  f_car, f_car_bw,
                                  lag, n_bins, 
+                                 decimate=None,
                                  n_perm=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2):
@@ -899,6 +900,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         positive integers.
     n_bins : int
         The number of phase-difference bins
+    decimate : None, int
+        The factor by which to decimate the data. For example, a value of 3
+        only considers every 3rd sample in the MI calculations.
     n_perm : int
         The number of random permutations for the cluster test
     min_shift, max_shift : int
@@ -932,6 +936,16 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             "f_mod_bw must be a scalar or a numpy array"
     if type(f_mod_bw) in (float, int):
         f_mod_bw = np.ones(f_mod.shape) * f_mod_bw
+
+    if decimate is None:
+        def decim(x):
+            return x
+    else:
+        assert decimate > 0, 'decimate must be positive'
+        assert isinstance(decimate, int), \
+                f'decimate must be an int, but got a {type(decimate)}'
+        def decim(x):
+            return x[..., ::decimate] # Decimate the last axis
 
     if n_perm > 0:
         if min_shift is None:
@@ -988,7 +1002,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
             # Compute MI for each phase bin
             for phase_bin in np.unique(phase_diff):
+
                 phase_sel = phase_diff == phase_bin
+                def select_samps(x):
+                    """
+                    Helper function to select the samples with the right LF
+                    phase difference and then decimate the signal.
+                    """
+                    return decim(x[:, phase_sel])
+
                 # Store the count of observations per phase bin
                 if i_fc == 0:
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
@@ -1004,21 +1026,26 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                               axis=1)
                     # Compute CMI in each direction
                     for i_lag in range(len(lag)):
-                        L = lambda x: np.roll(x, lag[i_lag], axis=1) # Lag function
+
+                        def L(x):
+                            """ Lag helper function
+                            """
+                            return np.roll(x, lag[i_lag], axis=1)
+
                         for i_direc, direc in enumerate('ab'):
                             if calc_type == 1:
                                 # Compute I(A;B|LA) and I(A;B|LB)
                                 i = gcmi.gccmi_ccc(
-                                        sig_2d['a'][:, phase_sel],
-                                        sig_2d['b'][:, phase_sel],
-                                        L(sig_2d[direc])[:, phase_sel])
+                                            select_samps(sig_2d['a']),
+                                            select_samps(sig_2d['b']),
+                                            select_samps(L(sig_2d[direc])))
                             elif calc_type == 2:
                                 # Compute I(LA;B|LB) and I(A;LB|LA)
                                 s1, s2 = ('a', 'b') if direc == 'a' else ('b', 'a')
                                 i = gcmi.gccmi_ccc(
-                                        L(sig_2d[s1])[:, phase_sel],
-                                        sig_2d[s2][:, phase_sel],
-                                        L(sig_2d[s2])[:, phase_sel])
+                                            select_samps(L(sig_2d[s1])),
+                                            select_samps(sig_2d[s2]),
+                                            select_samps(L(sig_2d[s2])))
                             else:
                                 raise(NotImplementedError)
 
