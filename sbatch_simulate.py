@@ -161,6 +161,6 @@ plt.title(f'p = {clust_stat_info["pval"]:.3f}')
 plt.tight_layout()
 plt.show()
 
-fname = f'{plot_dir}te_stats_{sim_type}_{rand_type}_{now}.png'
+fname = f'te_stats_{sim_type}_{rand_type}_{now}.png'
 plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
