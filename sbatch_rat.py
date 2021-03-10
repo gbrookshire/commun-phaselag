@@ -13,9 +13,10 @@ done
 
 
 import sys
+import datetime
 import numpy as np
 from scipy.io import loadmat
-import datetime
+from scipy import signal
 import comlag
 
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
@@ -44,6 +45,7 @@ f_car_bw = f_car / 3 # ~5 cycles
 
 # Parameters for the MI phase-lag analysis
 n_jobs = len(fnames)
+downsamp_factor = 4 # 2000 Hz / 4 = 500 Hz
 lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
@@ -51,7 +53,7 @@ mi_params = dict(f_mod=f_mod,
                  f_car_bw=f_car_bw,
                  n_bins=2**3,
                  method='sine psd',
-                 decimate=4,
+                 decimate=None,
                  n_perm=100,
                  min_shift=None, max_shift=None, cluster_alpha=0.05,
                  calc_type=2)
@@ -61,13 +63,18 @@ def te_fnc(i_rat):
     """
     fn = fnames[i_rat]
     print(fn)
+
     # Load the data
     d = loadmat(data_dir + fn)
-    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
-    s = [signal.decimate(sig, downsamp_factor) for sig in s] # Downsample
     fs = d['Fs'][0][0]
-    lag = int(lag_sec * fs)
+    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+
+    # Downsample the data
+    s = [signal.decimate(sig, downsamp_factor) for sig in s] # Downsample
+    fs /= downsamp_factor
+
     # Run the analysis
+    lag = int(lag_sec * fs)
     te_out = comlag.cfc_phaselag_transferentropy(s[0], s[1],
                                                  fs=fs,
                                                  lag=[lag],
