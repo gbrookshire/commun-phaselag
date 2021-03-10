@@ -12,26 +12,15 @@ Run simulations, including statistics
 
 Call in bash like this: 
 
-rand_options=("phasebin" "shift")
 data_options=("phase-dep-comm" "lf-coh-plus-noise" \
               "lf-coh-plus-noise-lag" "lf-coh-plus-pac")
-for rand_type in ${rand_options[*]}
-do
-    if [ "$rand_type" == "shift" ]
-    then
-        sbatch_dur="6:00:00"
-    else
-        sbatch_dur="30:00"
-    fi
         
-    for data_type in ${data_options[*]}
-    do
-        echo $rand_type $data_type
-        sbatch_submit.py \
-            -s 'source load_python-simulated_rhythmic_sampling.sh' \
-            -i "python sbatch_simulate.py $rand_type $data_type" \
-            -t $sbatch_dur -m 10G -d ../slurm_results/
-    done
+for data_type in ${data_options[*]}
+do
+    sbatch_submit.py \
+        -s 'source load_python-simulated_rhythmic_sampling.sh' \
+        -i "python sbatch_simulate.py $data_type" \
+        -t 12:00:00 -m 10G -d ../slurm_results/ -c 5
 done
 
 
@@ -45,8 +34,7 @@ import comlag
 import simulate
 
 # Get the command-line arguments
-rand_type = sys.argv[1] # Type of randomization test
-sim_type = sys.argv[2] # Type of data simulation
+sim_type = sys.argv[1] # Type of data simulation
 
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
 
@@ -83,84 +71,100 @@ mi_params = dict(fs=sim_params['fs'],
                  cluster_alpha=0.05,
                  calc_type=2)
 
-# Determine which type of randomization test to run
-rand_opts = ['phasebin', 'shift']
-assert rand_type in rand_opts
-if rand_type == 'phasebin':
-    mi_params['n_perm_phasebin'] = 1000
-elif rand_type == 'shift':
-    mi_params['n_perm_shift'] = 100
-
 # Determine which type of simulation to run
 sim_opts = ['phase-dep-comm',
             'lf-coh-plus-noise',
             'lf-coh-plus-noise-lag',
             'lf-coh-plus-pac']
-assert sim_type in sim_opts
-if sim_type == 'phase-dep-comm':
-    t, s_a, s_b = simulate.sim(**sim_params)
-elif sim_type == 'lf-coh-plus-noise':
-    t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
-                                                 sim_params['fs'])
-elif sim_type == 'lf-coh-plus-noise-lag':
-    t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
-                                                 sim_params['fs'],
-                                                 lag=15)
-elif sim_type == 'lf-coh-plus-pac':
-    t, s_a, s_b = simulate.sim_lf_coh_with_pac(sim_params['dur'],
-                                               sim_params['fs'])
+assert sim_type in sim_opts, f'Simulation type "{sim_type}" not recognized'
 
-# Compute transfer entropy
-te, clust_stat_info = comlag.cfc_phaselag_transferentropy(s_a, s_b,
-                                                          **mi_params)
 
-# Plots
+def generate_plots(te, clust_stat_info, fname):
+    # Plot the raw signals
+    plt.figure(figsize=(9, 6))
+    plt.subplot(2, 1, 1)
+    plt.plot(s_a)
+    plt.plot(s_b)
+    plt.xlim(0, 1000)
+    plt.title('Raw signals')
 
-# Plot the raw signals
-plt.figure(figsize=(9, 6))
-plt.subplot(2, 1, 1)
-plt.plot(s_a)
-plt.plot(s_b)
-plt.xlim(0, 1000)
-plt.title('Raw signals')
+    # Which permutation to plot (0 is the empirical data)
+    i_perm = 0
 
-# Which permutation to plot (0 is the empirical data)
-i_perm = 0
+    for n_plot, lagged_sig in enumerate('ab'):
+        plt.subplot(2, 3, 4 + n_plot)
+        x = te[lagged_sig][i_perm, :, :, 0]
+        plt.contourf(f_mod, f_car, x.T)
+        cb = plt.colorbar(format='%.2f')
+        cb.ax.set_ylabel('I (bits)')
+        plt.ylabel('HF freq (Hz)')
+        plt.xlabel('Phase freq (Hz)')
+        plt.title(f'Lagged: {lagged_sig}')
 
-for n_plot, lagged_sig in enumerate('ab'):
-    plt.subplot(2, 3, 4 + n_plot)
-    x = te[lagged_sig][i_perm, :, :, 0]
-    plt.contourf(f_mod, f_car, x.T)
+    plt.subplot(2, 3, 6)
+    # Plot the comodulogram
+    x = te['diff'][i_perm, :, :, 0]
+    levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
+    plt.contourf(f_mod, f_car, x.T,
+                levels=levels,
+                cmap=plt.cm.RdBu_r)
     cb = plt.colorbar(format='%.2f')
-    cb.ax.set_ylabel('I (bits)')
+    # Plot significant clusters
+    clust_labels = clust_stat_info['labels'][:,:,0]
+    signif_clusters = np.nonzero(
+            np.array(clust_stat_info['stats']) > clust_stat_info['cluster_thresh'])
+    clust_highlight = np.isin(clust_labels, 1 + signif_clusters[0]).astype(int)
+    plt.contour(f_mod, f_car,
+                clust_highlight.T,
+                levels=[0.5],
+                colors='black')
+    cb.ax.set_ylabel('Diff (bits)')
     plt.ylabel('HF freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
-    plt.title(f'Lagged: {lagged_sig}')
+    plt.title(f'p = {clust_stat_info["pval"]:.3f}')
+    plt.tight_layout()
 
-plt.subplot(2, 3, 6)
-# Plot the comodulogram
-x = te['diff'][i_perm, :, :, 0]
-levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
-plt.contourf(f_mod, f_car, x.T,
-             levels=levels,
-             cmap=plt.cm.RdBu_r)
-cb = plt.colorbar(format='%.2f')
-# Plot significant clusters
-clust_labels = clust_stat_info['labels'][:,:,0]
-signif_clusters = np.nonzero(
-        np.array(clust_stat_info['stats']) > clust_stat_info['cluster_thresh'])
-clust_highlight = np.isin(clust_labels, 1 + signif_clusters[0]).astype(int)
-plt.contour(f_mod, f_car,
-            clust_highlight.T,
-            levels=[0.5],
-            colors='black')
-cb.ax.set_ylabel('Diff (bits)')
-plt.ylabel('HF freq (Hz)')
-plt.xlabel('Phase freq (Hz)')
-plt.title(f'p = {clust_stat_info["pval"]:.3f}')
-plt.tight_layout()
-plt.show()
+    plt.savefig(f'{plot_dir}{fname}', dpi=300)
+    #plt.show()
 
-fname = f'te_stats_{sim_type}_{rand_type}_{now}.png'
-plt.savefig(f'{plot_dir}{fname}', dpi=300)
+
+if __name__ == '__main__':
+
+    if sim_type == 'phase-dep-comm':
+        t, s_a, s_b = simulate.sim(**sim_params)
+    elif sim_type == 'lf-coh-plus-noise':
+        t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+                                                     sim_params['fs'])
+    elif sim_type == 'lf-coh-plus-noise-lag':
+        t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+                                                     sim_params['fs'],
+                                                     lag=15)
+    elif sim_type == 'lf-coh-plus-pac':
+        t, s_a, s_b = simulate.sim_lf_coh_with_pac(sim_params['dur'],
+                                                   sim_params['fs'])
+
+    # Use each randomization scheme on the same underlying data
+
+    # First run the analysis by permuting the base-bins
+    rand_type = 'phasebin'
+    mi_params['n_perm_phasebin'] = 1000
+    mi_params['n_perm_shift'] = 0
+    te, clust_stat_info = comlag.cfc_phaselag_transferentropy(s_a.copy(),
+                                                              s_b.copy(),
+                                                              **mi_params)
+    fname = f'te_stats_{sim_type}_{rand_type}_{now}.png'
+    generate_plots(te, clust_stat_info, fname)
+
+    # Then run the analysis by randomly shifting the HF time-series
+    rand_type = 'shift'
+    mi_params['n_perm_phasebin'] = 0
+    mi_params['n_perm_shift'] = 100
+    te, clust_stat_info = comlag.cfc_phaselag_transferentropy(s_a.copy(),
+                                                              s_b.copy(),
+                                                              **mi_params)
+    fname = f'te_stats_{sim_type}_{rand_type}_{now}.png'
+    generate_plots(te, clust_stat_info, fname)
+
+
+
 
