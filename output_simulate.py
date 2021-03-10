@@ -1009,48 +1009,29 @@ sim_params = dict(dur=100,
                   common_noise_amp=0.1,
                   shared_gamma=True)
 
-## # Simulate signals with phase-lagged communication
-## t, s_a, s_b = simulate.sim(**sim_params)
-## fname = f'te_stats_phase-dep-comm.png'
+# Simulate signals with phase-lagged communication
+t, s_a, s_b = simulate.sim(**sim_params)
+fname = f'te_stats_phase-dep-comm.png'
 
 ## # Sig A: Alpha oscillation plus pink noise
 ## # Sig B: Same alpha oscillation as Sig A plus independent pink noise
-## # Result: Alpha-limited phase-dependent communication b/w A & B, with
-## # directionality haphazard between HF frequencies
-## # Solution: Shuffling HF info across trials/epochs will lead to a permuted
-## # distribution that has similar levels of phase-diff-TE. But when there's real
-## # communication, it will be stronger in the shuffled case.
-## n = sim_params['dur'] * sim_params['fs']
-## noise_amp = 1
-## osc_amp = 1
-## s_osc = osc_amp * simulate.osc_var_freq(n, sim_params['fs'], 8, 12, 0.1)
-## s_a = s_osc + (noise_amp * simulate.pink(n))
-## s_b = s_osc + (noise_amp * simulate.pink(n))
+## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+##                                              sim_params['fs'])
 ## fname = f'te_stats_lf-coh-plus-noise.png'
 
 ## ## Same as above, but lag Sig B (and therefore offset the alpha oscillations).
 ## ## This simulates alpha coherence that is not reducible to cross-talk.
 ## ## Result: Alpha-limited phase-dependent communication b/w A & B, with
 ## ## directionality mostly in one direction but with some switches by HF frequency
-## s_b = np.roll(s_b, 15)
+## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+##                                              sim_params['fs'],
+##                                              lag=15)
 ## fname = f'te_stats_lf-coh-plus-noise-lag.png'
 
-# Two signals with LF coherence and independent PAC
-n = sim_params['dur'] * sim_params['fs']
-noise_amp = 1
-osc_amp = 1
-gamma_amp = 1
-fs = sim_params['fs']
-lf_osc = osc_amp * simulate.osc_var_freq(n, fs, 8, 12, 0.1)
-a = 10 # Sigmoid slope
-c = 0.1 # Sigmoid "threshold"
-sigmoid = lambda x: 1 - (1 / (1 + np.exp(-a * (x - c))))
-a_gamma = sigmoid(lf_osc) * (simulate.osc_var_freq(n, fs, 70, 100, 0.5) - 0.5)
-b_gamma = sigmoid(lf_osc) * (simulate.osc_var_freq(n, fs, 70, 100, 0.5) - 0.5)
-s_a = lf_osc + (gamma_amp * a_gamma) + (noise_amp * simulate.pink(n))
-s_b = lf_osc + (gamma_amp * b_gamma) + (noise_amp * simulate.pink(n))
-s_b = np.roll(s_b, 15)
-fname = f'te_stats_lf-coh-plus-pac.png'
+## # Two signals with LF coherence and independent PAC
+## t, s_a, s_b = simulate.sim_lf_coh_with_pac(sim_params['dur'],
+##                                            sim_params['fs'])
+## fname = f'te_stats_lf-coh-plus-pac.png'
 
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
@@ -1061,8 +1042,8 @@ mi_params = dict(fs=sim_params['fs'],
                  lag=[15],
                  n_bins=2**3,
                  method='sine psd',
-                 n_perm_phasebin=1000,
-                 n_perm_shift=0,
+                 n_perm_phasebin=0, # 1000,
+                 n_perm_shift= 100,
                  min_shift=None, max_shift=None,
                  cluster_alpha=0.05,
                  calc_type=2)
