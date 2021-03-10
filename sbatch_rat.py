@@ -42,7 +42,6 @@ f_mod_bw = f_mod / 2.5 # ~4 cycles
 f_car = np.arange(30, 150, 10)
 f_car_bw = f_car / 3 # ~5 cycles
 
-
 # Parameters for the MI phase-lag analysis
 n_jobs = len(fnames)
 downsamp_factor = 4 # 2000 Hz / 4 = 500 Hz

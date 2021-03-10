@@ -20,7 +20,10 @@ import comlag
 
 plt.ion()
 
-plot_dir = '../data/plots/simulated/'
+data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/data/'
+plot_dir = data_dir + 'plots/simulated/'
+
+plot_dir = plot_dir + 'stats/perm_phasebin/'
 
 #######################################
 # Test the analysis on simulated data #
@@ -991,12 +994,13 @@ for leakage in cross_talk_levels:
 ###########################################
 
 # Low-freq 'modulator' frequencies
-f_mod = np.logspace(np.log10(4), np.log10(20), 10)
-f_mod_bw = f_mod / 2
+f_mod = np.arange(6, 15)
+f_mod_bw = f_mod / 2.5 # ~4 cycles
 
 # High-freq 'carrier' frequencies
 f_car = np.arange(30, 150, 10)
-f_car_bw = f_car / 4
+f_car_bw = f_car / 3 # ~5 cycles
+
 
 # Parameters for the simulated signals
 sim_params = dict(dur=100,
@@ -1005,55 +1009,29 @@ sim_params = dict(dur=100,
                   common_noise_amp=0.1,
                   shared_gamma=True)
 
-## # Simulate signals with phase-lagged communication
-## t, s_a, s_b = simulate.sim(**sim_params)
-## fname = f'te_stats_phase-dep-comm.png'
+# Simulate signals with phase-lagged communication
+t, s_a, s_b = simulate.sim(**sim_params)
+fname = f'te_stats_phase-dep-comm.png'
 
-# Sig A: Alpha oscillation plus pink noise
-# Sig B: Same alpha oscillation as Sig A plus independent pink noise
-# Result: Alpha-limited phase-dependent communication b/w A & B, with
-# directionality haphazard between HF frequencies
-# Solution: Shuffling HF info across trials/epochs will lead to a permuted
-# distribution that has similar levels of phase-diff-TE. But when there's real
-# communication, it will be stronger in the shuffled case.
-n = sim_params['dur'] * sim_params['fs']
-noise_amp = 1
-osc_amp = 1
-s_osc = osc_amp * simulate.osc_var_freq(n, sim_params['fs'], 8, 12, 0.1)
-s_a = s_osc + (noise_amp * simulate.pink(n))
-s_b = s_osc + (noise_amp * simulate.pink(n))
-fname = f'te_stats_lf-coh-plus-noise.png'
+## # Sig A: Alpha oscillation plus pink noise
+## # Sig B: Same alpha oscillation as Sig A plus independent pink noise
+## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+##                                              sim_params['fs'])
+## fname = f'te_stats_lf-coh-plus-noise.png'
 
-# Same as above, but lag Sig B (and therefore offset the alpha oscillations).
-# This simulates alpha coherence that is not reducible to cross-talk.
-# Result: Alpha-limited phase-dependent communication b/w A & B, with
-# directionality mostly in one direction but with some switches by HF frequency
-s_b = np.roll(s_b, 15)
-fname = f'te_stats_lf-coh-plus-noise-lag.png'
+## ## Same as above, but lag Sig B (and therefore offset the alpha oscillations).
+## ## This simulates alpha coherence that is not reducible to cross-talk.
+## ## Result: Alpha-limited phase-dependent communication b/w A & B, with
+## ## directionality mostly in one direction but with some switches by HF frequency
+## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+##                                              sim_params['fs'],
+##                                              lag=15)
+## fname = f'te_stats_lf-coh-plus-noise-lag.png'
 
 ## # Two signals with LF coherence and independent PAC
-## n = sim_params['dur'] * sim_params['fs']
-## noise_amp = 1
-## osc_amp = 1
-## gamma_amp = 0.5
-## fs = sim_params['fs']
-## lf_osc = osc_amp * simulate.osc_var_freq(n, fs, 8, 12, 0.1)
-## a = 10 # Sigmoid slope
-## c = 0.1 # Sigmoid "threshold"
-## sigmoid = lambda x: 1 - (1 / (1 + np.exp(-a * (x - c))))
-## a_gamma = sigmoid(lf_osc) * (osc_var_freq(n, fs, 70, 100, 0.5) - 0.5)
-## b_gamma = sigmoid(lf_osc) * (osc_var_freq(n, fs, 70, 100, 0.5) - 0.5)
-## s_a = lf_osc + (gamma_amp * a_gamma) + (noise_amp * simulate.pink(n))
-## s_b = lf_osc + (gamma_amp * b_gamma) + (noise_amp * simulate.pink(n))
-## s_b = np.roll(s_b, 15)
+## t, s_a, s_b = simulate.sim_lf_coh_with_pac(sim_params['dur'],
+##                                            sim_params['fs'])
 ## fname = f'te_stats_lf-coh-plus-pac.png'
-
-
-# Plot the raw signals
-plt.figure()
-plt.plot(s_a)
-plt.plot(s_b)
-plt.xlim(0, 1000)
 
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
@@ -1062,10 +1040,12 @@ mi_params = dict(fs=sim_params['fs'],
                  f_car=f_car,
                  f_car_bw=f_car_bw,
                  lag=[15],
-                 n_bins=2**4,
+                 n_bins=2**3,
                  method='sine psd',
-                 n_perm=100,
-                 min_shift=None, max_shift=None, cluster_alpha=0.05,
+                 n_perm_phasebin=0, # 1000,
+                 n_perm_shift= 100,
+                 min_shift=None, max_shift=None,
+                 cluster_alpha=0.05,
                  calc_type=2)
 
 ## for k,v in mi_params.items(): globals()[k] = v # FOR DEBUGGING
@@ -1078,13 +1058,23 @@ mi_params = dict(fs=sim_params['fs'],
 
 # Compute transfer entropy
 te, clust_stat_info = comlag.cfc_phaselag_transferentropy(s_a, s_b,
-                                                               **mi_params)
+                                                          **mi_params)
+
+# Plots
+
+# Plot the raw signals
+plt.figure(figsize=(9, 6))
+plt.subplot(2, 1, 1)
+plt.plot(s_a)
+plt.plot(s_b)
+plt.xlim(0, 1000)
+plt.title('Raw signals')
+
 # Which permutation to plot (0 is the empirical data)
 i_perm = 0
 
-plt.figure(figsize=(9, 3))
 for n_plot, lagged_sig in enumerate('ab'):
-    plt.subplot(1, 3, 1 + n_plot)
+    plt.subplot(2, 3, 4 + n_plot)
     x = te[lagged_sig][i_perm, :, :, 0]
     plt.contourf(f_mod, f_car, x.T)
     cb = plt.colorbar(format='%.2f')
@@ -1093,7 +1083,7 @@ for n_plot, lagged_sig in enumerate('ab'):
     plt.xlabel('Phase freq (Hz)')
     plt.title(f'Lagged: {lagged_sig}')
 
-plt.subplot(1, 3, 3)
+plt.subplot(2, 3, 6)
 # Plot the comodulogram
 x = te['diff'][i_perm, :, :, 0]
 levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)

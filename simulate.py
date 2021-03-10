@@ -14,6 +14,9 @@ from acoustics.generator import white, pink
 
 plot_dir = '../data/plots/simulated/illustrate/'
 
+alpha_freq = (9, 11) # Hz
+gamma_freq = (70, 100) 
+
 def sim(dur=10, fs=1000, noise_amp=0.1,
         signal_leakage=0.0,
         common_noise_amp=0.1, common_alpha_amp=0.0,
@@ -54,8 +57,6 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     s_b : np.ndarray
         Signal at area b
     """
-    alpha_freq = (9, 11) # Hz
-    gamma_freq = (70, 100) 
 
     n_samps = int(dur * fs)
     t = np.arange(n_samps) / fs
@@ -188,6 +189,49 @@ def sim(dur=10, fs=1000, noise_amp=0.1,
     s_a = s_a + common_alpha_sig
     s_b = s_b + common_alpha_sig
 
+    return t, s_a, s_b
+
+
+def sim_lf_coh_plus_noise(dur, fs, lag=0, noise_amp=1, osc_amp=1):
+    """
+    Sig A: Alpha oscillation plus pink noise
+    Sig B: Same alpha oscillation as Sig A plus independent pink noise
+    Result: Alpha-limited phase-dependent communication b/w A & B, with
+    directionality haphazard between HF frequencies
+    Solution: Shuffling HF info across trials/epochs will lead to a permuted
+    distribution that has similar levels of phase-diff-TE. But when there's real
+    communication, it will be stronger in the shuffled case.
+    """
+    n = int(dur * fs)
+    t = np.arange(n) / fs
+    s_osc = osc_amp * osc_var_freq(n, fs,
+                                   alpha_freq[0], alpha_freq[1],
+                                   0.1)
+    s_a = s_osc + (noise_amp * pink(n))
+    s_b = s_osc + (noise_amp * pink(n))
+    s_b = np.roll(s_b, lag)
+    return t, s_a, s_b
+
+
+def sim_lf_coh_with_pac(dur, fs, noise_amp=1.5, osc_amp=1, gamma_amp=1):
+    """
+    Two signals with LF coherence and independent PAC
+    """
+    lag = 15
+    n = int(dur * fs)
+    t = np.arange(n) / fs
+    lf_osc = osc_amp * osc_var_freq(n, fs,
+                                    alpha_freq[0], alpha_freq[1],
+                                    0.1)
+    a = 10 # Sigmoid slope
+    c = 0.1 # Sigmoid "threshold"
+    sigmoid = lambda x: 1 - (1 / (1 + np.exp(-a * (x - c))))
+    gamma = lambda: osc_var_freq(n, fs, gamma_freq[0], gamma_freq[1], 0.5) - 0.5
+    a_gamma = sigmoid(lf_osc) * gamma()
+    b_gamma = sigmoid(lf_osc) * gamma()
+    s_a = lf_osc + (gamma_amp * a_gamma) + (noise_amp * pink(n))
+    s_b = lf_osc + (gamma_amp * b_gamma) + (noise_amp * pink(n))
+    s_b = np.roll(s_b, lag)
     return t, s_a, s_b
 
 

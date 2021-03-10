@@ -845,7 +845,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  f_car, f_car_bw,
                                  lag, n_bins, 
                                  decimate=None,
-                                 n_perm=0, min_shift=None, max_shift=None,
+                                 n_perm_phasebin=0,
+                                 n_perm_shift=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2):
     """
@@ -903,8 +904,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     decimate : None, int
         The factor by which to decimate the data. For example, a value of 3
         only considers every 3rd sample in the MI calculations.
-    n_perm : int
-        The number of random permutations for the cluster test
+    n_perm_phasebin : int, 'full'
+        The number of random permutations for the cluster test. Randomly
+        shuffle the transfer entropy between each phase bin. If the string
+        "full" is given, compute every permutation of the data, for k =
+        fact(phase_bins) permutations.
+    n_perm_shift : int
+        The number of random permutations for the cluster test. Randomly shift
+        one of the high-frequency traces to destroy communication between the
+        signals.
     min_shift, max_shift : int
         The minimum and maximum number of samples to shift by when performing
         random permutation tests
@@ -947,7 +955,16 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         def decim(x):
             return x[..., ::decimate] # Decimate the last axis
 
-    if n_perm > 0:
+    if isinstance(n_perm_phasebin, str):
+        assert n_perm_phasebin == 'full', \
+                'n_perm_phasebin must be an integer or the str "full"'
+        raise(NotImplementedError)
+    elif isinstance(n_perm_phasebin, int):
+        assert n_perm_phasebin >= 0, 'n_perm_phasebin must be positive'
+        assert n_perm_phasebin < np.math.factorial(n_bins), \
+            'n_perm_phasebin must be less than factorial(n_bins)'
+
+    if n_perm_shift > 0:
         if min_shift is None:
             min_shift = int(len(s['a']) / 2)
         if max_shift is None:
@@ -958,6 +975,18 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             raise NotImplementedError
         else:
             i_lag = 0
+
+    assert (n_perm_shift == 0) or (n_perm_phasebin == 0), \
+        'Only use one type of permutation analysis at a time'
+    if n_perm_shift:
+        n_perm = n_perm_shift
+    elif n_perm_phasebin:
+        if n_perm_phasebin == 'full':
+            n_perm = np.math.factorial(n_bins)
+        else:
+            n_perm = n_perm_phasebin
+    else:
+        n_perm = 0
 
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -1016,7 +1045,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                     counts[i_fm, phase_bin] = np.sum(phase_sel)
 
                 # Randomly shift the HF time-series 
-                for i_perm in range(n_perm + 1):
+                for i_perm in range(n_perm_shift + 1):
                     sig_2d = copy.deepcopy(sig_2d_orig)
                     if i_perm > 0: # Don't shift the real data
                         # Shift signal A
@@ -1050,6 +1079,19 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                 raise(NotImplementedError)
 
                             mi[i_perm, i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+
+    # Compute the permutation test by shuffling TE values across phase bins
+    # Make a generator object to shuffle the phase bins
+    if isinstance(n_perm_phasebin, int):
+        perm_indices = (np.random.choice(n_bins, n_bins, False)
+                            for _ in range(n_perm_phasebin))
+    elif n_perm_phasebin == 'full':
+        perm_indices = itertools.permutations(range(n_bins))
+    else:
+        raise(NotImplementedError)
+    # Shuffle the data for each permutation
+    for i_perm, perm_inx in enumerate(perm_indices):
+        mi[i_perm + 1, ...] = mi[0:1, ..., perm_inx]
 
     # Compute a phase-dependence index for each combination of LF and HF
     mi_comod = mod_index(mi, method)
