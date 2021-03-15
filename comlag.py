@@ -848,7 +848,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  n_perm_phasebin=0,
                                  n_perm_shift=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
-                                 method='sine psd', calc_type=2):
+                                 method='sine psd', calc_type=2,
+                                 verbose=True):
     """
     Compute conditional mutual information between two signals, and lagged
     copies of those two signals.
@@ -999,7 +1000,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         # Compute the LF phase-difference of each signal
         fm = f_mod[i_fm]
         fm_bw = f_mod_bw[i_fm]
-        print(fm)
+        if verbose: print(fm)
         filt = {sig: bp_filter(s[sig].T,
                                fm - (fm_bw / 2),
                                fm + (fm_bw / 2),
