@@ -213,11 +213,10 @@ def sim_lf_coh_plus_noise(dur, fs, lag=0, noise_amp=1, osc_amp=1):
     return t, s_a, s_b
 
 
-def sim_lf_coh_with_pac(dur, fs, noise_amp=1.5, osc_amp=1, gamma_amp=1):
+def sim_lf_coh_with_pac(dur, fs, lag, noise_amp=1.5, osc_amp=1, gamma_amp=1):
     """
     Two signals with LF coherence and independent PAC
     """
-    lag = 15
     n = int(dur * fs)
     t = np.arange(n) / fs
     lf_osc = osc_amp * osc_var_freq(n, fs,
