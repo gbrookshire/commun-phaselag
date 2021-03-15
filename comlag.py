@@ -1143,6 +1143,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 max_stat_per_perm.append(np.max(perm))
             else:
                 max_stat_per_perm.append(0)
+        max_stat_per_perm = np.array(max_stat_per_perm)
         cluster_thresh = np.percentile(max_stat_per_perm, [95])
         pval = np.mean(max_stat_per_perm[1:] > max_stat_per_perm[0])
 
