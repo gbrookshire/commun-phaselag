@@ -234,6 +234,18 @@ def sim_lf_coh_with_pac(dur, fs, lag, noise_amp=1.5, osc_amp=1, gamma_amp=1):
     return t, s_a, s_b
 
 
+def sim_lf_coh_with_hf_comm(dur, fs, lag, noise_amp=1.5, osc_amp=1, gamma_amp=1):
+    """
+    Two signals with LF coherence and HF communication, but the HF
+    communication *does not* depend on the LF phase difference.
+    """
+    t, s_a, s_b = sim_lf_coh_plus_noise(dur, fs, lag, noise_amp, osc_amp)
+    gamma_sig = osc_var_freq(len(t), fs, gamma_freq[0], gamma_freq[1], 0.5) - 0.5
+    gamma_sig *= gamma_amp
+    s_a += gamma_sig
+    s_b += np.roll(gamma_sig, lag)
+    return t, s_a, s_b
+
 #############################
 # Signal processing helpers #
 #############################
