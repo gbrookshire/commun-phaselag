@@ -846,6 +846,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  lag, n_bins, 
                                  decimate=None,
                                  n_perm_phasebin=0,
+                                 n_perm_phasebin_indiv=0,
+                                 n_perm_signal=0,
                                  n_perm_shift=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
@@ -911,6 +913,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         shuffle the transfer entropy between each phase bin. If the string
         "full" is given, compute every permutation of the data, for k =
         fact(phase_bins) permutations.
+    n_perm_phasebin_indiv : int, 'full'
+        Like n_perm_phasebin, but separately shuffles the phase-bins of each HF
+        signal before computing the diff and phase-dependence. DO NOT USE!
+        Results in false positives every time for structured data.
+    n_perm_signal : int
+        The number of random permutations for the cluster test. Randomly
+        shuffle which signal is considered to be signal A or B, and then
+        recompute the difference between them to get the directionality of
+        communication.
     n_perm_shift : int
         The number of random permutations for the cluster test. Randomly shift
         one of the high-frequency traces to destroy communication between the
@@ -982,7 +993,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         else:
             i_lag = 0
 
-    assert (n_perm_shift == 0) or (n_perm_phasebin == 0), \
+    assert len(np.nonzero([n_perm_shift,
+                           n_perm_signal,
+                           n_perm_phasebin,
+                           n_perm_phasebin_indiv])[0]) <= 1, \
         'Only use one type of permutation analysis at a time'
     if n_perm_shift:
         n_perm = n_perm_shift
@@ -991,6 +1005,12 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             n_perm = np.math.factorial(n_bins)
         else:
             n_perm = n_perm_phasebin
+    elif n_perm_phasebin_indiv:
+        n_perm = n_perm_phasebin_indiv
+    elif n_perm_signal:
+        n_perm = n_perm_signal
+        # This will only work if we split the data in epochs
+        raise NotImplementedError
     else:
         n_perm = 0
 
@@ -1090,17 +1110,26 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
     # Compute the permutation test by shuffling TE values across phase bins
     # Make a generator object to shuffle the phase bins
+    if n_perm_phasebin_indiv: # FIXME temporary hack 
+        n_perm_phasebin = n_perm_phasebin_indiv 
     if isinstance(n_perm_phasebin, int):
         perm_indices = (np.random.choice(n_bins, n_bins, False)
                             for _ in range(n_perm_phasebin))
     elif n_perm_phasebin == 'full':
-        perm_indices = itertools.permutations(range(n_bins))
-    else:
+        #perm_indices = itertools.permutations(range(n_bins))
         raise(NotImplementedError)
-    # Shuffle the data for each permutation
-    for i_perm, perm_inx in enumerate(perm_indices):
-        mi[i_perm + 1, ...] = mi[0:1, ..., perm_inx]
 
+    # Shuffle the data for each permutation
+    if n_perm_phasebin:
+        for i_perm, perm_inx in enumerate(perm_indices):
+            mi[i_perm + 1, ...] = mi[0:1, ..., perm_inx]
+    elif n_perm_phasebin_indiv:
+        for i_perm, perm_inx in enumerate(perm_indices):
+            perm_inx_a = copy.copy(perm_inx)
+            perm_inx_b = copy.copy(perm_inx)
+            np.random.shuffle(perm_inx_b)
+            mi[i_perm + 1, :, :, :, 0, :] = mi[0:1, :, :, :, 0, perm_inx_a]
+            mi[i_perm + 1, :, :, :, 1, :] = mi[0:1, :, :, :, 1, perm_inx_b]
 
     # Compute a phase-dependence index for each combination of LF and HF
     if diff_method == 1: # PhaseDiff(TE(A-->B)) - PhaseDiff(TE(B-->A))
