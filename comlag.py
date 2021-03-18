@@ -849,6 +849,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  n_perm_shift=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
+                                 diff_method=1,
                                  verbose=True):
     """
     Compute conditional mutual information between two signals, and lagged
@@ -928,6 +929,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             I(A;B|LA) and I(A;B|LB)
         2: Transfer entropy
             I(LA;B|LB) and I(A;LB|LA)
+    diff_method : int
+        How to calculate the difference.
+        1: PhaseDiff(TE(A-->B)) - PhaseDiff(TE(B-->A))
+        2: PhaseDiff( TE(A-->B) - TE(B-->A) )
         
     """
 
@@ -988,6 +993,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             n_perm = n_perm_phasebin
     else:
         n_perm = 0
+
+    assert diff_method in (1, 2), 'diff_method "{diff_method}" not recognized'
 
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -1094,22 +1101,27 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     for i_perm, perm_inx in enumerate(perm_indices):
         mi[i_perm + 1, ...] = mi[0:1, ..., perm_inx]
 
-    # Compute the diff between directions before computing phase-dependence
-    mi_diff_shape = list(mi.shape)
-    mi_diff_shape[4] += 1 # One extra 'column' for the directions
-    mi_diff = np.full(mi_diff_shape, np.nan)
-    mi_diff[:,:,:,:,:2,:] = mi
-    mi_diff[:,:,:,:,2,:] = mi[:,:,:,:,0,:] - mi[:,:,:,:,1,:]
-    mi = mi_diff
 
     # Compute a phase-dependence index for each combination of LF and HF
-    mi_comod = mod_index(mi, method)
-
-    # Get the difference between directions
-    mi_comod = {'a': mi_comod[..., 0],
-                'b': mi_comod[..., 1],
-                'diff': mi_comod[..., 2]}
-    #mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
+    if diff_method == 1: # PhaseDiff(TE(A-->B)) - PhaseDiff(TE(B-->A))
+        mi_comod = mod_index(mi, method)
+        mi_comod = {'a': mi_comod[..., 0],
+                    'b': mi_comod[..., 1]}
+        mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
+    elif diff_method == 2: # PhaseDiff( TE(A-->B) - TE(B-->A) )
+        # Compute the diff between directions before computing phase-dependence
+        mi_diff_shape = list(mi.shape)
+        mi_diff_shape[4] += 1 # One extra 'column' for the directions
+        mi_diff = np.full(mi_diff_shape, np.nan)
+        mi_diff[:,:,:,:,:2,:] = mi
+        mi_diff[:,:,:,:,2,:] = mi[:,:,:,:,0,:] - mi[:,:,:,:,1,:]
+        mi = mi_diff
+        # Compute a phase-dependence index for each combination of LF and HF
+        mi_comod = mod_index(mi, method)
+        # Get the difference between directions
+        mi_comod = {'a': mi_comod[..., 0],
+                    'b': mi_comod[..., 1],
+                    'diff': mi_comod[..., 2]}
 
     # Get clusters and p-values
     if n_perm > 0:
