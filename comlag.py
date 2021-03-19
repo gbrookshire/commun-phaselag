@@ -985,7 +985,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         if min_shift is None:
             min_shift = int(len(s['a']) / 2)
         if max_shift is None:
-            max_shift = len(s['a'])
+            # Avoid shifting by so much that you'd run over the edge of the sig
+            max_shift = len(s['a']) - lag
 
         # Cluster analysis currently ignores multiple lags
         if len(lag) > 1: 
