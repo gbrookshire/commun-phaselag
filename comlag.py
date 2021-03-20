@@ -888,7 +888,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     Parameters
     ----------
 
-    s_a, s_b : np.ndarray (time,)
+    s_a, s_b : np.ndarray (time,) or (time, trial)
         The two signals
     fs : scalar (int, float)
         The sampling rate of the signals
@@ -948,6 +948,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     """
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
+
+    assert s_a.shape == s_b.shape, 'Data s_a and s_b must be the same shape'
     s = {'a': s_a, 'b': s_b}
 
     assert calc_type in (1, 2)
@@ -1009,9 +1011,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     elif n_perm_phasebin_indiv:
         n_perm = n_perm_phasebin_indiv
     elif n_perm_signal:
+        assert s_a.ndim == 2, \
+                'Permuting signals only works for signals with multiple epochs'
         n_perm = n_perm_signal
-        # This will only work if we split the data in epochs
-        raise NotImplementedError
     else:
         n_perm = 0
 
@@ -1023,6 +1025,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                  np.nan)
     # Initialize array to hold the number of observations in each bin
     counts = np.full([len(f_mod), n_bins], np.nan)
+
+    # Get indices for the boundaries of each epoch, for after we append epochs
+    if s_a.ndim == 2:
+        epoch_boundaries = np.arange(0, s_a.size, s_a.shape[0])
 
     for i_fm in range(len(f_mod)):
         # Compute the LF phase-difference of each signal
@@ -1040,8 +1046,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         phase_diff = phase['a'] - phase['b']
         phase_diff = wrap_to_pi(phase_diff)
         phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
-        # Append trials over time if data includes multiple trials
-        phase_diff = np.ravel(phase_diff, 'F')
+        # Append trials over time if data includes multiple epochs. Due to the
+        # lag in the CMI, this will result in a small number of samples being
+        # conditioned on data from a different epoch.
+        if s_a.ndim == 2:
+            phase_diff = np.ravel(phase_diff, 'F')
+        # FIXME
+        # Find a way to mark the epoch boundaries, and then excluding samples
+        # from the CMI calculation if they are conditioned on samples from a
+        # different epoch.
 
         for i_fc in range(len(f_car)):
             # Filter the HF signals
@@ -1054,60 +1067,91 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                         for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
             # This makes mutual information more informative
-            h = {sig: hilbert(filt[sig]) for sig in 'ab'}
+            h = {sig: hilbert(filt[sig], axis=0) for sig in 'ab'}
             sig_2d_orig = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
                             for sig in 'ab'}
 
-            # Compute MI for each phase bin
-            for phase_bin in np.unique(phase_diff):
+            #FIXME P-val is zero if no clusters are found anywhere
+            #FIXME No clusters found for the signal-switching randomization
 
-                phase_sel = phase_diff == phase_bin
-                def select_samps(x):
-                    """
-                    Helper function to select the samples with the right LF
-                    phase difference and then decimate the signal.
-                    """
-                    return decim(x[:, phase_sel])
+            for i_perm in range(n_perm_signal + 1):
 
-                # Store the count of observations per phase bin
-                if i_fc == 0:
-                    counts[i_fm, phase_bin] = np.sum(phase_sel)
+                # Randomize signals A and B within each epoch 
+                if i_perm > 0:
+                    for i_epoch in range(s_a.shape[1]):
+                        if np.random.choice([True, False]):
+                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_perm])
+                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_perm])
+                            sig_2d_orig['a'][:, :, i_perm] = tmp_b
+                            sig_2d_orig['b'][:, :, i_perm] = tmp_a
 
-                # Randomly shift the HF time-series 
-                for i_perm in range(n_perm_shift + 1):
-                    sig_2d = copy.deepcopy(sig_2d_orig)
-                    if i_perm > 0: # Don't shift the real data
-                        # Shift signal A
-                        sig_2d['a'] = np.roll(sig_2d['a'],
-                                              np.random.randint(min_shift,
-                                                                max_shift),
-                                              axis=1)
-                    # Compute CMI in each direction
-                    for i_lag in range(len(lag)):
+                # Append epochs
+                if s_a.ndim == 2:
+                    sig_2d_append = {sig: np.reshape(sig_2d_orig[sig],
+                                                (2, -1),
+                                                order='F')
+                                        for sig in 'ab'}
+                else:
+                    sig_2d_append = sig_2d_orig.copy()
 
-                        def L(x):
-                            """ Lag helper function
-                            """
-                            return np.roll(x, lag[i_lag], axis=1)
+                # Compute MI for each phase bin
+                for phase_bin in np.unique(phase_diff):
 
-                        for i_direc, direc in enumerate('ab'):
-                            if calc_type == 1:
-                                # Compute I(A;B|LA) and I(A;B|LB)
-                                i = gcmi.gccmi_ccc(
-                                            select_samps(sig_2d['a']),
-                                            select_samps(sig_2d['b']),
-                                            select_samps(L(sig_2d[direc])))
-                            elif calc_type == 2:
-                                # Compute I(LA;B|LB) and I(A;LB|LA)
-                                s1, s2 = ('a', 'b') if direc == 'a' else ('b', 'a')
-                                i = gcmi.gccmi_ccc(
-                                            select_samps(L(sig_2d[s1])),
-                                            select_samps(sig_2d[s2]),
-                                            select_samps(L(sig_2d[s2])))
-                            else:
-                                raise(NotImplementedError)
+                    phase_sel = phase_diff == phase_bin
+                    def select_samps(x):
+                        """
+                        Helper function to select the samples with the right LF
+                        phase difference and then decimate the signal.
+                        """
+                        return decim(x[:, phase_sel])
 
-                            mi[i_perm, i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+                    # Store the count of observations per phase bin
+                    if i_fc == 0:
+                        counts[i_fm, phase_bin] = np.sum(phase_sel)
+
+                    # Randomly shift the HF time-series 
+                    for i_perm in range(n_perm_shift + 1):
+                        sig_2d = copy.deepcopy(sig_2d_append)
+                        if i_perm > 0: # Don't shift the real data
+                            # Shift signal A
+                            sig_2d['a'] = np.roll(sig_2d['a'],
+                                                np.random.randint(min_shift,
+                                                                    max_shift),
+                                                axis=1)
+                        # Compute CMI in each direction
+                        for i_lag in range(len(lag)):
+
+                            def L(x):
+                                """
+                                Lag helper function
+                                Because this rolls samples from the end to the
+                                beginning, it will result in some samples being
+                                counted in the MI calculation even though they
+                                happened far apart in the real data. This will only
+                                occur for a very small number of samples (number of
+                                the lag), so it's negligible as long as the length
+                                of the data is much larger than the lag.
+                                """
+                                return np.roll(x, lag[i_lag], axis=1)
+
+                            for i_direc, direc in enumerate('ab'):
+                                if calc_type == 1:
+                                    # Compute I(A;B|LA) and I(A;B|LB)
+                                    i = gcmi.gccmi_ccc(
+                                                select_samps(sig_2d['a']),
+                                                select_samps(sig_2d['b']),
+                                                select_samps(L(sig_2d[direc])))
+                                elif calc_type == 2:
+                                    # Compute I(LA;B|LB) and I(A;LB|LA)
+                                    s1, s2 = ('a', 'b') if direc == 'a' else ('b', 'a')
+                                    i = gcmi.gccmi_ccc(
+                                                select_samps(L(sig_2d[s1])),
+                                                select_samps(sig_2d[s2]),
+                                                select_samps(L(sig_2d[s2])))
+                                else:
+                                    raise(NotImplementedError)
+
+                                mi[i_perm, i_fm, i_fc, i_lag, i_direc, phase_bin] = i
 
     # Compute the permutation test by shuffling TE values across phase bins
     # Make a generator object to shuffle the phase bins
