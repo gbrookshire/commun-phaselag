@@ -195,20 +195,40 @@ if __name__ == '__main__':
 
     n_sim = 100
 
-    rand_opts = ['phasebin', 'shift']
+    rand_opts = ['phasebin', 'shift', 'signal']
+    sim_opts = ['phase-dep-comm',
+                #'volume-cond-plus-noise',
+                'lf-coh-plus-noise',
+                'lf-coh-plus-pac',
+                'lf-coh-plus-hf-comm']
+    assert len(sim_opts) % 2 == 0 # So it fits in two rows
 
-    colors = ['tab:green', 'tab:purple']
+    colors = ['tab:green', 'tab:purple', 'tab:orange']
 
     for i_plot,sim_type in enumerate(sim_opts):
-        plt.subplot(2, 2, i_plot + 1)
+        plt.subplot(2, len(sim_opts) // 2, i_plot + 1)
         
         for i_rand,rand_type in enumerate(rand_opts):
             if rand_type == 'phasebin':
                 mi_params['n_perm_phasebin'] = 1000
+                mi_params['n_perm_phasebin_indiv'] = 0
                 mi_params['n_perm_shift'] = 0
+                mi_params['n_perm_signal'] = 0
+            elif rand_type == 'phasebin-indiv':
+                mi_params['n_perm_phasebin'] = 0
+                mi_params['n_perm_phasebin_indiv'] = 1000
+                mi_params['n_perm_shift'] = 0
+                mi_params['n_perm_signal'] = 0
             elif rand_type == 'shift':
                 mi_params['n_perm_phasebin'] = 0
+                mi_params['n_perm_phasebin_indiv'] = 0
                 mi_params['n_perm_shift'] = 100
+                mi_params['n_perm_signal'] = 0
+            elif rand_type == 'signal':
+                mi_params['n_perm_phasebin'] = 0
+                mi_params['n_perm_phasebin_indiv'] = 0
+                mi_params['n_perm_shift'] = 0
+                mi_params['n_perm_signal'] = 100
 
             pvals = []
             for k in tqdm(range(n_sim)):
@@ -231,9 +251,21 @@ if __name__ == '__main__':
                                             sim_params['dur'],
                                             sim_params['fs'],
                                             lag=mi_params['lag'])
+                elif sim_type == 'lf-coh-plus-hf-comm':
+                    t, s_a, s_b = simulate.sim_lf_coh_with_hf_comm(
+                                            sim_params['dur'],
+                                            sim_params['fs'],
+                                            lag=lag,
+                                            noise_amp=2)
                 else:
                     msg = f"simulation type '{sim_type}' not recognized"
                     raise(Exception(msg))
+
+                # Split the data into epochs
+                epoch_length = 1000 # Samples
+                n_splits = len(s_a) / epoch_length
+                s_a = np.stack(np.split(s_a, n_splits), axis=1)
+                s_b = np.stack(np.split(s_b, n_splits), axis=1)
 
                 # Run the analysis and save the p-value
                 try:
@@ -271,7 +303,8 @@ if __name__ == '__main__':
                     f"P(Signif) = {np.mean(pvals <= 0.05)}",
                     color=colors[i_rand])
 
-    fname = 'randomization_showdown.png'
+    plt.tight_layout()
+    fname = f'randomization_showdown-{now}.png'
     plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
 
