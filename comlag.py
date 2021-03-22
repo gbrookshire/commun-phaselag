@@ -878,11 +878,6 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 - The summed z-value across comodulograms and permutations
                 - Check for normal distribution?
                 - For pos/neg, this is a two-tailed test (so z thresh for .025)
-    
-    - Test idea from Ole: "if you want get a feel for the SNR you could shuffle
-      the data (e.g. 'rotate' sender or receiver) and create a surrogate
-      distribution for each freq-freq tile."
-        - This removes the LF coherence as well as the HF communication
 
 
     Parameters
@@ -1071,19 +1066,16 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             sig_2d_orig = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
                             for sig in 'ab'}
 
-            #FIXME P-val is zero if no clusters are found anywhere
-            #FIXME No clusters found for the signal-switching randomization
-
-            for i_perm in range(n_perm_signal + 1):
+            for i_perm_sig in range(n_perm_signal + 1):
 
                 # Randomize signals A and B within each epoch 
-                if i_perm > 0:
+                if i_perm_sig > 0:
                     for i_epoch in range(s_a.shape[1]):
                         if np.random.choice([True, False]):
-                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_perm])
-                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_perm])
-                            sig_2d_orig['a'][:, :, i_perm] = tmp_b
-                            sig_2d_orig['b'][:, :, i_perm] = tmp_a
+                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_perm_sig])
+                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_perm_sig])
+                            sig_2d_orig['a'][:, :, i_perm_sig] = tmp_b
+                            sig_2d_orig['b'][:, :, i_perm_sig] = tmp_a
 
                 # Append epochs
                 if s_a.ndim == 2:
@@ -1110,9 +1102,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                         counts[i_fm, phase_bin] = np.sum(phase_sel)
 
                     # Randomly shift the HF time-series 
-                    for i_perm in range(n_perm_shift + 1):
+                    for i_perm_shift in range(n_perm_shift + 1):
                         sig_2d = copy.deepcopy(sig_2d_append)
-                        if i_perm > 0: # Don't shift the real data
+                        if i_perm_shift > 0: # Don't shift the real data
                             # Shift signal A
                             sig_2d['a'] = np.roll(sig_2d['a'],
                                                 np.random.randint(min_shift,
@@ -1151,11 +1143,12 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                 else:
                                     raise(NotImplementedError)
 
+                                i_perm = max(i_perm_sig, i_perm_shift)
                                 mi[i_perm, i_fm, i_fc, i_lag, i_direc, phase_bin] = i
 
     # Compute the permutation test by shuffling TE values across phase bins
     # Make a generator object to shuffle the phase bins
-    if n_perm_phasebin_indiv: # FIXME temporary hack 
+    if n_perm_phasebin_indiv:
         n_perm_phasebin = n_perm_phasebin_indiv 
     if isinstance(n_perm_phasebin, int):
         perm_indices = (np.random.choice(n_bins, n_bins, False)
