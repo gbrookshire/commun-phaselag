@@ -1072,10 +1072,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 if i_perm_sig > 0:
                     for i_epoch in range(s_a.shape[1]):
                         if np.random.choice([True, False]):
-                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_perm_sig])
-                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_perm_sig])
-                            sig_2d_orig['a'][:, :, i_perm_sig] = tmp_b
-                            sig_2d_orig['b'][:, :, i_perm_sig] = tmp_a
+                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_epoch])
+                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_epoch])
+                            sig_2d_orig['a'][:, :, i_epoch] = tmp_b
+                            sig_2d_orig['b'][:, :, i_epoch] = tmp_a
 
                 # Append epochs
                 if s_a.ndim == 2:
