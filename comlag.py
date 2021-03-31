@@ -935,10 +935,11 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             I(A;B|LA) and I(A;B|LB)
         2: Transfer entropy
             I(LA;B|LB) and I(A;LB|LA)
-    diff_method : int
+    diff_method : str
         How to calculate the difference.
-        1: PhaseDiff(TE(A-->B)) - PhaseDiff(TE(B-->A))
-        2: PhaseDiff( TE(A-->B) - TE(B-->A) )
+        'PD(AB)-PD(BA)': PhaseDep(TE(A-->B)) - PhaseDep(TE(B-->A))
+        'PD(AB-BA)': PhaseDep( TE(A-->B) - TE(B-->A) )
+        'both': Calculate the difference using both of the methods above
         
     """
 
@@ -1012,7 +1013,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     else:
         n_perm = 0
 
-    assert diff_method in (1, 2), 'diff_method "{diff_method}" not recognized'
+    assert diff_method in ('PD(AB)-PD(BA)', 'PD(AB-BA)', 'both'), \
+            'diff_method "{diff_method}" not recognized'
 
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -1170,13 +1172,14 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             mi[i_perm + 1, :, :, :, 1, :] = mi[0:1, :, :, :, 1, perm_inx_b]
 
     # Compute a phase-dependence index for each combination of LF and HF
-    if diff_method == 1: # PhaseDiff(TE(A-->B)) - PhaseDiff(TE(B-->A))
+    mi_c = {}
+    if diff_method in ('PD(AB)-PD(BA)', 'both'):
         mi_comod = mod_index(mi, method)
         mi_comod = {'a': mi_comod[..., 0],
                     'b': mi_comod[..., 1]}
         mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
-    elif diff_method == 2: # PhaseDiff( TE(A-->B) - TE(B-->A) )
-        # Compute the diff between directions before computing phase-dependence
+        mi_c['PD(AB)-PD(BA)'] = mi_comod
+    if diff_method in ('PD(AB-BA)', 'both'):
         mi_diff_shape = list(mi.shape)
         mi_diff_shape[4] += 1 # One extra 'column' for the directions
         mi_diff = np.full(mi_diff_shape, np.nan)
@@ -1189,62 +1192,67 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         mi_comod = {'a': mi_comod[..., 0],
                     'b': mi_comod[..., 1],
                     'diff': mi_comod[..., 2]}
+        mi_c['PD(AB-BA)'] = mi_comod
 
     # Get clusters and p-values
     if n_perm > 0:
+        stat_info = {}
+        for diff_meth, mi_comod in mi_c.items():
 
-        # Threshold data for clustering by finding phase-lag TE differences
-        # that are less than the percentiles defined by the cluster alpha value
-        quantiles = [100 * (cluster_alpha / 2),
-                     100 * (1 - (cluster_alpha / 2))]
-        thresh = np.percentile(mi_comod['diff'], quantiles)
-        thresh_mi_comod = np.zeros(mi_comod['diff'].shape)
-        thresh_mi_comod[mi_comod['diff'] < thresh[0]] = -1
-        thresh_mi_comod[mi_comod['diff'] > thresh[1]] = 1
+            # Threshold data for clustering by finding phase-lag TE differences
+            # that are less than the percentiles defined by the cluster alpha value
+            quantiles = [100 * (cluster_alpha / 2),
+                        100 * (1 - (cluster_alpha / 2))]
+            thresh = np.percentile(mi_comod['diff'], quantiles)
+            thresh_mi_comod = np.zeros(mi_comod['diff'].shape)
+            thresh_mi_comod[mi_comod['diff'] < thresh[0]] = -1
+            thresh_mi_comod[mi_comod['diff'] > thresh[1]] = 1
 
-        # Cluster statistic: Summed absolute z-score
-        z_mi_comod = stats.zscore(mi_comod['diff'], axis=None)
-        stat_fun = lambda x: np.sum(np.abs(x))
+            # Cluster statistic: Summed absolute z-score
+            z_mi_comod = stats.zscore(mi_comod['diff'], axis=None)
+            stat_fun = lambda x: np.sum(np.abs(x))
 
-        # Find clusters for each permutation, including the empirical data
-        clust_labels = np.full(thresh_mi_comod.shape, np.nan)
-        cluster_stats = []
-        for i_perm in range(n_perm + 1):
-            # Find the clusters
-            c_labs = measure.label(thresh_mi_comod[i_perm, :, :, i_lag])
-            clust_labels[i_perm, :, :, i_lag] = c_labs
-            # Get the cluster stat for each cluster
-            perm_cluster_stat = []
-            labels = clust_labels[i_perm, :, :, i_lag]
-            for i_clust in range(1, int(np.max(labels)) + 1):
-                # Select the z-values in the cluster
-                x = z_mi_comod[i_perm, :, :, i_lag]
-                x = x[labels == i_clust]
-                s = stat_fun(x)
-                perm_cluster_stat.append(s)
-            cluster_stats.append(perm_cluster_stat)
+            # Find clusters for each permutation, including the empirical data
+            clust_labels = np.full(thresh_mi_comod.shape, np.nan)
+            cluster_stats = []
+            for i_perm in range(n_perm + 1):
+                # Find the clusters
+                c_labs = measure.label(thresh_mi_comod[i_perm, :, :, i_lag])
+                clust_labels[i_perm, :, :, i_lag] = c_labs
+                # Get the cluster stat for each cluster
+                perm_cluster_stat = []
+                labels = clust_labels[i_perm, :, :, i_lag]
+                for i_clust in range(1, int(np.max(labels)) + 1):
+                    # Select the z-values in the cluster
+                    x = z_mi_comod[i_perm, :, :, i_lag]
+                    x = x[labels == i_clust]
+                    s = stat_fun(x)
+                    perm_cluster_stat.append(s)
+                cluster_stats.append(perm_cluster_stat)
 
-        # Compute the p-value
-        max_stat_per_perm = []
-        for perm in cluster_stats:
-            if len(perm) > 0:
-                max_stat_per_perm.append(np.max(perm))
-            else:
-                max_stat_per_perm.append(0)
-        max_stat_per_perm = np.array(max_stat_per_perm)
-        cluster_thresh = np.percentile(max_stat_per_perm, [95])
-        pval = np.mean(max_stat_per_perm[1:] > max_stat_per_perm[0])
+            # Compute the p-value
+            max_stat_per_perm = []
+            for perm in cluster_stats:
+                if len(perm) > 0:
+                    max_stat_per_perm.append(np.max(perm))
+                else:
+                    max_stat_per_perm.append(0)
+            max_stat_per_perm = np.array(max_stat_per_perm)
+            cluster_thresh = np.percentile(max_stat_per_perm, [95])
+            pval = np.mean(max_stat_per_perm[1:] > max_stat_per_perm[0])
 
-        # Package the cluster stat results
-        clust_stat_info = dict(labels=clust_labels[0, ...],
-                               stats=cluster_stats[0],
-                               cluster_thresh=cluster_thresh,
-                               max_per_perm=max_stat_per_perm,
-                               pval=pval)
-        return mi_comod, clust_stat_info
+            # Package the cluster stat results
+            clust_stat_info = dict(labels=clust_labels[0, ...],
+                                stats=cluster_stats[0],
+                                cluster_thresh=cluster_thresh,
+                                max_per_perm=max_stat_per_perm,
+                                pval=pval)
+            stat_info[diff_meth] = clust_stat_info
 
     else:
-        return mi_comod, None
+        stat_info = None
+
+    return mi_c, stat_info
 
 
 
