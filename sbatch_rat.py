@@ -6,11 +6,9 @@ do
     sbatch_submit.py \
         -s 'source load_python-simulated_rhythmic_sampling.sh' \
         -i "python sbatch_rat.py $iRat" \
-        -t 24:00:00 -m 10G -d ../slurm_results/
+        -t 24:00:00 -m 10G -c 5 -d ../slurm_results/
 done
 """
-
-
 
 import sys
 import datetime
@@ -43,7 +41,7 @@ f_car = np.arange(30, 150, 10)
 f_car_bw = f_car / 3 # ~5 cycles
 
 # Parameters for the MI phase-lag analysis
-n_jobs = len(fnames)
+k_perm = 500
 downsamp_factor = 4 # 2000 Hz / 4 = 500 Hz
 lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
@@ -51,11 +49,18 @@ mi_params = dict(f_mod=f_mod,
                  f_car=f_car,
                  f_car_bw=f_car_bw,
                  n_bins=2**3,
-                 method='sine psd',
                  decimate=None,
-                 n_perm=100,
-                 min_shift=None, max_shift=None, cluster_alpha=0.05,
-                 calc_type=2)
+                 n_perm_phasebin=0,
+                 n_perm_phasebin_indiv=0,
+                 n_perm_signal=0,
+                 n_perm_shift=0,
+                 min_shift=None, max_shift=None,
+                 cluster_alpha=0.05,
+                 diff_method='both',
+                 calc_type=2,
+                 method='sine psd',
+                 verbose=True)
+
 
 def te_fnc(i_rat):
     """ Helper function for parallel computation
@@ -69,18 +74,29 @@ def te_fnc(i_rat):
     s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
 
     # Downsample the data
-    s = [signal.decimate(sig, downsamp_factor) for sig in s] # Downsample
+    s = [signal.decimate(sig, downsamp_factor) for sig in s]
     fs /= downsamp_factor
 
-    # Run the analysis
     lag = int(lag_sec * fs)
-    te_out = comlag.cfc_phaselag_transferentropy(s[0], s[1],
-                                                 fs=fs,
-                                                 lag=[lag],
-                                                 **mi_params)
-    # Save the data
-    save_fname = f"{data_dir}te/te_{now}_rat{i_rat}.npz"
-    np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
+
+    # Run the analysis for each randomization type
+    for perm_type in ('signal', 'shift'):
+
+        if perm_type == 'signal':
+            mi_params['n_perm_shift'] = 0
+            mi_params['n_perm_signal'] = k_perm
+        elif perm_type == 'shift':
+            mi_params['n_perm_shift'] = k_perm
+            mi_params['n_perm_signal'] = 0
+
+        te_out = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                    fs=fs,
+                                                    lag=[lag],
+                                                    **mi_params)
+
+        # Save the data
+        save_fname = f"{data_dir}te/te_{now}_rat{i_rat}_{perm_type}.npz"
+        np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
 
 
 if __name__ == '__main__':
