@@ -673,7 +673,7 @@ for direction in 'ab':
 # Plot the impulse responses for the HF BP-filters
 
 fs = 2000 # Sampling rate in Hz
-impulse_dur = 0.5 # seconds
+impulse_dur = 1 # seconds
 impulse_len = int(impulse_dur * fs) # samples
 t = np.arange(impulse_len) / fs # Time vector in seconds
 t -= t.mean()
@@ -681,19 +681,20 @@ t -= t.mean()
 impulse = np.zeros(impulse_len)
 impulse[impulse_len // 2] = 1
 
-f_car = [20, 80]
-f_car_bw = [5, 20]
+f_center = f_mod
+f_bw = f_mod_bw
+assert len(f_center) == len(f_bw)
 
 plt.clf()
-for i_bw, bw in enumerate(f_car_bw):
-    plt.subplot(2, 1, i_bw + 1)
-    plt.title(f"BW: {bw} Hz")
-    for f in f_car:
-        f_low = f - (bw / 2)
-        f_high = f + (bw / 2)
-        ir = comlag.bp_filter(impulse, f_low, f_high, fs)
-        plt.plot(t, ir, label=f)
-    if i_bw == len(f_car_bw) - 1:
-        plt.legend(title='Frequency')
+for i_freq in range(len(f_center)):
+    plt.subplot(4, 3, i_freq + 1)
+    f = f_center[i_freq]
+    bw = f_bw[i_freq]
+    msg = f"{f:.2f} $\pm$ {bw / 2:.2f} Hz"
+    plt.title(msg)
+    f_low = f - (bw / 2)
+    f_high = f + (bw / 2)
+    ir = comlag.bp_filter(impulse, f_low, f_high, fs)
+    plt.plot(t, ir, label=f)
+plt.tight_layout()
 
-plt.savefig(f'{plot_dir}filter_kernels.png')
