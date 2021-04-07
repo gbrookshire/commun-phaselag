@@ -3,10 +3,13 @@
 Call with:
 for iRat in {0..7}
 do
-    sbatch_submit.py \
-        -s 'source load_python-simulated_rhythmic_sampling.sh' \
-        -i "python sbatch_rat.py $iRat" \
-        -t 24:00:00 -m 10G -c 5 -d ../slurm_results/
+    for permType in signal shift
+    do
+        sbatch_submit.py \
+            -s 'source load_python-simulated_rhythmic_sampling.sh' \
+            -i "python sbatch_rat.py $iRat $permType" \
+            -t 72:00:00 -m 10G -c 10 -d ../slurm_results/
+    done
 done
 """
 
@@ -31,7 +34,7 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
 # Low-freq 'modulator' frequencies
 # Jiang et al (2015): "a choice of 3-5 cycles in relation to the slower
 # oscillation is sensible"
-f_mod = np.arange(4, 21)
+f_mod = np.arange(4, 16)
 f_mod_bw = f_mod / 2.5 # ~4 cycles
 
 # High-freq 'carrier' frequencies
@@ -42,7 +45,7 @@ f_car_bw = f_car / 3 # ~5 cycles
 
 # Parameters for the MI phase-lag analysis
 k_perm = 500
-downsamp_factor = 4 # 2000 Hz / 4 = 500 Hz
+downsamp_factor = 5 # 2000 Hz / 5 = 400 Hz
 lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
@@ -62,7 +65,7 @@ mi_params = dict(f_mod=f_mod,
                  verbose=True)
 
 
-def te_fnc(i_rat):
+def te_fnc(i_rat, perm_type):
     """ Helper function for parallel computation
     """
     fn = fnames[i_rat]
@@ -79,30 +82,40 @@ def te_fnc(i_rat):
 
     lag = int(lag_sec * fs)
 
-    # Run the analysis for each randomization type
-    for perm_type in ('signal', 'shift'):
+    if perm_type == 'shift':
+        mi_params['n_perm_shift'] = k_perm
+        mi_params['n_perm_signal'] = 0
 
-        if perm_type == 'signal':
-            mi_params['n_perm_shift'] = 0
-            mi_params['n_perm_signal'] = k_perm
-        elif perm_type == 'shift':
-            mi_params['n_perm_shift'] = k_perm
-            mi_params['n_perm_signal'] = 0
+    elif perm_type == 'signal':
+        mi_params['n_perm_shift'] = 0
+        mi_params['n_perm_signal'] = k_perm
 
-        te_out = comlag.cfc_phaselag_transferentropy(s[0], s[1],
-                                                    fs=fs,
-                                                    lag=[lag],
-                                                    **mi_params)
+        # Split the data into epochs for the signal-permuting analysis
+        epoch_dur = 1 # seconds
+        epoch_length = int(epoch_dur * fs) # Samples
+        n_samps_to_keep = len(s[0]) // epoch_length * epoch_length
+        n_splits = n_samps_to_keep / epoch_length
+        s = [np.stack(np.split(sig[:n_samps_to_keep], n_splits), axis=1)
+                for sig in s]
+    else:
+        raise(NotImplementedError(f"perm_type {perm_type} is not supported"))
 
-        # Save the data
-        save_fname = f"{data_dir}te/te_{now}_rat{i_rat}_{perm_type}.npz"
-        np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
+    te_out = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                fs=fs,
+                                                lag=[lag],
+                                                **mi_params)
+
+    # Save the data
+    save_fname = f"{data_dir}te/te_{now}_rat{i_rat}_{perm_type}.npz"
+    np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
+    print(save_fname)
 
 
 if __name__ == '__main__':
     i_rat = sys.argv[1]
+    perm_type = sys.argv[2]
     assert i_rat.isnumeric(), \
             f'arg must be the index of the animal, got "{i_rat}"'
     i_rat = int(i_rat)
-    te_fnc(i_rat)
+    te_fnc(i_rat, perm_type)
 
