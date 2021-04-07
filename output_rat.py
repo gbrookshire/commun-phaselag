@@ -566,54 +566,114 @@ for direction in te.keys():
 # Plot analyses that were run in sbatch on the Bluebear cluster
 
 # Load data from the cluster
-timestamp = '2021-03-01-1335'
-te_all = []
-mi_params_all = []
-lag_sec_all = []
-plt.figure(figsize=(8, 5))
-for i_rat in range(len(fnames)):
-    fn = f"te_{timestamp}_rat{i_rat}.npz"
-    saved_data = np.load(f"{data_dir}te/{fn}",
-                         allow_pickle=True)
-    te_full, clust_stat_info = saved_data.get('te')
-    mi_params = saved_data.get('mi_params').item()
-    lag_sec = saved_data.get('lag_sec')
+timestamp = '2021-03-31-1417'
+p_thresh = 0.05
+cmaps = {'PD(AB)-PD(BA)': plt.cm.RdBu_r,
+         'PD(AB-BA)': plt.cm.plasma}
+contour_color = {'PD(AB)-PD(BA)': 'black',
+                 'PD(AB-BA)': 'white'}
+for perm_type in ('shift', 'signal'):
+    te_all = []
+    mi_params_all = []
+    lag_sec_all = []
+    for diff_type in ('PD(AB)-PD(BA)', 'PD(AB-BA)'):
+        plt.figure(figsize=(8, 5))
+        for i_rat in range(len(fnames)):
+            fn = f"te_{timestamp}_rat{i_rat}_{perm_type}.npz"
+            try:
+                saved_data = np.load(f"{data_dir}te/{fn}",
+                                    allow_pickle=True)
+            except FileNotFoundError:
+                print(f'No file found: {fn}')
+                plt.subplot(3, 3, i_rat + 1)
+                continue
+            te_full, clust_info = saved_data.get('te')
+            mi_params = saved_data.get('mi_params').item()
+            lag_sec = saved_data.get('lag_sec')
 
-    te = {'a': te_full[..., 0, 0],
-      'b': te_full[..., 0, 1]}
-    te['diff'] = te['a'] - te['b']
+            te = te_full[diff_type]
 
-    x = te['diff'][0, ...] # Plot the empirical data
+            x = te['diff'][0, :, :, 0] # Plot the empirical data for the first lag
 
-    plt.subplot(3, 3, i_rat + 1)
+            plt.subplot(3, 3, i_rat + 1)
 
-    levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
-    plt.contourf(mi_params['f_mod'],
-                 mi_params['f_car'],
-                 x.T,
-                 levels=levels,
-                 cmap=plt.cm.RdBu_r)
-    cb = plt.colorbar(format='%.2f')
-    # Plot significant clusters
-    clust_labels = clust_stat_info['labels'][:,:,0]
-    signif_clusters = np.nonzero(
-            np.array(clust_stat_info['stats']) > clust_stat_info['cluster_thresh'])
-    clust_highlight = np.isin(clust_labels, 1 + signif_clusters[0]).astype(int)
-    plt.contour(mi_params['f_mod'],
-                mi_params['f_car'],
-                clust_highlight.T,
-                levels=[0.5])
-                #colors='black')
-    cb.ax.set_ylabel('bits $^2$')
-    plt.ylabel('HF freq (Hz)')
-    plt.xlabel('Phase freq (Hz)')
-    plt.title(f'p = {clust_stat_info["pval"]:.3f}')
+            maxabs = np.max(np.abs(x))
+            if diff_type == 'PD(AB)-PD(BA)':
+                levels = np.linspace(-maxabs, maxabs, 50)
+                cb_ticks = [-maxabs, 0, maxabs]
+            elif diff_type == 'PD(AB-BA)':
+                levels = np.linspace(0, maxabs, 50)
+                cb_ticks = [0, maxabs]
+            plt.contourf(mi_params['f_mod'],
+                        mi_params['f_car'],
+                        x.T,
+                        levels=levels,
+                        cmap=cmaps[diff_type])
+            cb = plt.colorbar(format='%.2e')
+            # Plot significant clusters
+            cl_info = clust_info[diff_type]
+            clust_labels = cl_info['labels'][:,:,0].astype(int)
+            signif_clusters = np.nonzero(
+                np.array(cl_info['stats']) > cl_info['cluster_thresh'])
+            clust_highlight = np.isin(clust_labels,
+                                      1 + signif_clusters[0]).astype(int)
+            thresh = np.percentile(cl_info['max_per_perm'],
+                                [(1 - p_thresh) * 100])
+            for i_clust in np.unique(clust_labels):
+                if i_clust == 0:
+                    continue
+                elif cl_info['stats'][i_clust-1] > thresh:
+                    plt.contour(mi_params['f_mod'],
+                                mi_params['f_car'],
+                                (clust_labels == i_clust).T,
+                                levels=[0.5],
+                                colors=contour_color[diff_type],
+                                alpha=0.5)
+            cb.set_ticks(cb_ticks)
+            cb.ax.set_ylabel('bits $^2$')
+            plt.ylabel('HF freq (Hz)')
+            plt.xlabel('Phase freq (Hz)')
+            plt.title(f'p = {cl_info["pval"]:.3f}')
+        plt.tight_layout()
+        plt.savefig(f'{plot_dir}te/{timestamp}_{diff_type}_{perm_type}.png')
 
     
+for direction in 'ab':
+    plt.figure(figsize=(8, 5))
+    for i_rat in range(len(fnames)):
+        fn = f"te_{timestamp}_rat{i_rat}_{perm_type}.npz"
+        try:
+            saved_data = np.load(f"{data_dir}te/{fn}",
+                                allow_pickle=True)
+        except FileNotFoundError:
+            print(f'No file found: {fn}')
+        te_full, clust_info = saved_data.get('te')
+        mi_params = saved_data.get('mi_params').item()
+        lag_sec = saved_data.get('lag_sec')
+
+        te = te_full[diff_type]
+
+        x = te[direction ][0, :, :, 0] # Plot the empirical data for the first lag
+
+        plt.subplot(3, 3, i_rat + 1)
+
+        levels = np.linspace(*np.array([0, 1]) * np.max(x), 50)
+        plt.contourf(mi_params['f_mod'],
+                    mi_params['f_car'],
+                    x.T,
+                    levels=levels)
+        cb = plt.colorbar(format='%.2e')
+    plt.tight_layout()
+    plt.savefig(f'{plot_dir}te/{timestamp}_{direction}.png')
+
+
+
+
+
 # Plot the impulse responses for the HF BP-filters
 
 fs = 2000 # Sampling rate in Hz
-impulse_dur = 0.5 # seconds
+impulse_dur = 1 # seconds
 impulse_len = int(impulse_dur * fs) # samples
 t = np.arange(impulse_len) / fs # Time vector in seconds
 t -= t.mean()
@@ -621,19 +681,20 @@ t -= t.mean()
 impulse = np.zeros(impulse_len)
 impulse[impulse_len // 2] = 1
 
-f_car = [20, 80]
-f_car_bw = [5, 20]
+f_center = f_mod
+f_bw = f_mod_bw
+assert len(f_center) == len(f_bw)
 
 plt.clf()
-for i_bw, bw in enumerate(f_car_bw):
-    plt.subplot(2, 1, i_bw + 1)
-    plt.title(f"BW: {bw} Hz")
-    for f in f_car:
-        f_low = f - (bw / 2)
-        f_high = f + (bw / 2)
-        ir = comlag.bp_filter(impulse, f_low, f_high, fs)
-        plt.plot(t, ir, label=f)
-    if i_bw == len(f_car_bw) - 1:
-        plt.legend(title='Frequency')
+for i_freq in range(len(f_center)):
+    plt.subplot(4, 3, i_freq + 1)
+    f = f_center[i_freq]
+    bw = f_bw[i_freq]
+    msg = f"{f:.2f} $\pm$ {bw / 2:.2f} Hz"
+    plt.title(msg)
+    f_low = f - (bw / 2)
+    f_high = f + (bw / 2)
+    ir = comlag.bp_filter(impulse, f_low, f_high, fs)
+    plt.plot(t, ir, label=f)
+plt.tight_layout()
 
-plt.savefig(f'{plot_dir}filter_kernels.png')
