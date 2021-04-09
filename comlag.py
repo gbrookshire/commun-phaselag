@@ -851,7 +851,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  n_perm_shift=0, min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
-                                 diff_method=1,
+                                 diff_method='both',
                                  verbose=True):
     """
     Compute conditional mutual information between two signals, and lagged
