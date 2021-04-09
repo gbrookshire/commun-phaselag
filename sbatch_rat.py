@@ -22,7 +22,10 @@ import comlag
 
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
 
-data_dir = '../data/RatData/'
+base_data_dir = '../' # Bluebear
+base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/' # Desktop
+data_dir = base_data_dir + 'data/RatData/' 
+
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat6_20111021_begin1.mat',
           'EEG_speed_allData_Rat13_20120131_begin1_CA3_CSC9.mat',
@@ -31,21 +34,32 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat47_20140923_begin1_CA3_CSC11_CA1_TT3.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
-# Low-freq 'modulator' frequencies
-# Jiang et al (2015): "a choice of 3-5 cycles in relation to the slower
-# oscillation is sensible"
-f_mod = np.arange(4, 16)
-f_mod_bw = f_mod / 2.5 # ~4 cycles
 
-# High-freq 'carrier' frequencies
-# Jiang et al (2015): "a range of 4 to 6 cycles is appropriate when analyzing
-# how gamma band power is related to the phase of slower oscillations."
-f_car = np.arange(30, 150, 10)
-f_car_bw = f_car / 3 # ~5 cycles
+## ## Parameters from Jiang
+## ## On 4/9, we decided to use the other parameter set
+## # Low-freq 'modulator' frequencies
+## # Jiang et al (2015): "a choice of 3-5 cycles in relation to the slower
+## # oscillation is sensible"
+## f_mod = np.arange(4, 16)
+## f_mod_bw = f_mod / 2.5 # ~4 cycles
+## 
+## # High-freq 'carrier' frequencies
+## # Jiang et al (2015): "a range of 4 to 6 cycles is appropriate when analyzing
+## # how gamma band power is related to the phase of slower oscillations."
+## f_car = np.arange(30, 150, 10)
+## f_car_bw = f_car / 3 # ~5 cycles
+##
+## downsamp_factor = 5 # 2000 Hz / 5 = 400 Hz
+
+## ## Parameters from Feb 17
+f_mod = np.logspace(np.log10(4), np.log10(20), 15)
+f_mod_bw = f_mod / 2
+f_car = np.arange(20, 150, 10)
+f_car_bw = f_car / 80 * 20 # Keep 20 Hz bandwidth at 80 Hz (~ 7 cycles)
+downsamp_factor = 5
 
 # Parameters for the MI phase-lag analysis
 k_perm = 500
-downsamp_factor = 5 # 2000 Hz / 5 = 400 Hz
 lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
@@ -77,8 +91,9 @@ def te_fnc(i_rat, perm_type):
     s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
 
     # Downsample the data
-    s = [signal.decimate(sig, downsamp_factor) for sig in s]
-    fs /= downsamp_factor
+    if downsamp_factor is not None:
+        s = [signal.decimate(sig, downsamp_factor) for sig in s]
+        fs /= downsamp_factor
 
     lag = int(lag_sec * fs)
 
@@ -97,6 +112,9 @@ def te_fnc(i_rat, perm_type):
         n_splits = n_samps_to_keep / epoch_length
         s = [np.stack(np.split(sig[:n_samps_to_keep], n_splits), axis=1)
                 for sig in s]
+    elif perm_type == None:
+        mi_params['n_perm_shift'] = 0
+        mi_params['n_perm_signal'] = 0
     else:
         raise(NotImplementedError(f"perm_type {perm_type} is not supported"))
 
@@ -111,7 +129,7 @@ def te_fnc(i_rat, perm_type):
     print(save_fname)
 
 
-if __name__ == '__main__':
+def run_single_rat_sbatch():
     i_rat = sys.argv[1]
     perm_type = sys.argv[2]
     assert i_rat.isnumeric(), \
@@ -119,3 +137,17 @@ if __name__ == '__main__':
     i_rat = int(i_rat)
     te_fnc(i_rat, perm_type)
 
+
+def run_all_rats_desktop():
+    for i_rat in range(len(fnames)):
+        print(f'Analyzing rat {i_rat}')
+        te_fnc(i_rat, None)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        print('Running single analysis on sbatch')
+        run_single_rat_on_sbatch()
+    else:
+        print('Running all rat analyses without sbatch')
+        run_all_rats_desktop()
