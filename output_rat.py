@@ -3,6 +3,7 @@ from scipy.io import loadmat
 from scipy import signal
 import matplotlib.pyplot as plt
 import re
+import os
 from joblib import Parallel, delayed
 import datetime
 import comlag
@@ -667,13 +668,12 @@ for direction in 'ab':
     plt.savefig(f'{plot_dir}te/{timestamp}_{direction}.png')
 
 
+####################################################
+# Plot the impulse responses for the HF BP-filters #
+####################################################
 
-
-
-# Plot the impulse responses for the HF BP-filters
-
-fs = 2000 # Sampling rate in Hz
-impulse_dur = 1 # seconds
+fs = 1000 # Sampling rate in Hz
+impulse_dur = 2 # seconds
 impulse_len = int(impulse_dur * fs) # samples
 t = np.arange(impulse_len) / fs # Time vector in seconds
 t -= t.mean()
@@ -681,20 +681,81 @@ t -= t.mean()
 impulse = np.zeros(impulse_len)
 impulse[impulse_len // 2] = 1
 
-f_center = f_mod
-f_bw = f_mod_bw
+f_bw_ratio = np.arange(1.5, 6.1, 0.5)
+f_center = 10 * np.ones(f_bw_ratio.shape)
+f_bw = f_center / f_bw_ratio
 assert len(f_center) == len(f_bw)
 
-plt.clf()
+plt.figure()
 for i_freq in range(len(f_center)):
-    plt.subplot(4, 3, i_freq + 1)
+    plt.subplot(3, 4, i_freq + 1)
     f = f_center[i_freq]
     bw = f_bw[i_freq]
-    msg = f"{f:.2f} $\pm$ {bw / 2:.2f} Hz"
+    msg = f"{f:.1f} $\pm$ {bw / 2:.1f} Hz\nRatio: {f_bw_ratio[i_freq]:.1f}"
     plt.title(msg)
     f_low = f - (bw / 2)
     f_high = f + (bw / 2)
     ir = comlag.bp_filter(impulse, f_low, f_high, fs)
     plt.plot(t, ir, label=f)
+    plt.yticks([])
+    plt.xticks([])
 plt.tight_layout()
+
+
+#################################################
+# Tile the space of HF and LF filter bandwidths #
+# Analyses run on Bluebear                      #
+#################################################
+
+ratio_levels = np.arange(1.5, 6.1, 0.5)
+#ratio_levels = np.arange(2.0, 6.01, 1.0)
+files = os.listdir(data_dir + 'te/')
+pattern = 'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
+diff_type = 'PD(AB)-PD(BA)'
+
+plt.clf()
+for i_lf, lf_ratio in enumerate(ratio_levels):
+    for i_hf, hf_ratio in enumerate(ratio_levels[::-1]):
+        te = []
+        for i_rat in range(len(fnames)):
+            pat = pattern.format(i_rat=i_rat,
+                                 lf_ratio=lf_ratio,
+                                 hf_ratio=hf_ratio)
+            match_inx = [i for i, f in enumerate(files) if f.endswith(pat)]
+            if len(match_inx) > 1:
+                raise(Exception('More than one matching file found'))
+            else:
+                match_inx = match_inx[0]
+            fn = files[match_inx]
+            saved_data = np.load(f"{data_dir}te/{fn}",
+                                 allow_pickle=True)
+            te_tmp = np.squeeze(saved_data.get('te')[0][diff_type]['diff'])
+            te.append(te_tmp)
+        te = np.stack(te)
+        te_avg = np.mean(te, 0)
+        mi_params = saved_data.get('mi_params').tolist()
+
+        i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
+        plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
+
+        #plt.title(f'LF:{lf_ratio}, HF:{hf_ratio}')
+
+        max_level = np.max(np.abs(te_avg))
+        levels = np.linspace(-max_level, max_level, 50)
+        plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_avg.T,
+                     cmap=plt.cm.RdBu_r, levels=levels)
+        #cb = plt.colorbar(format='%.0e')
+        #cb.set_ticks([0, max_level])
+
+        if i_lf == 0:
+            plt.ylabel(f'HF: {hf_ratio:.1f}')
+        else:
+            plt.yticks([])
+        if i_hf == len(ratio_levels) - 1:
+            plt.xlabel(f'LF: {lf_ratio:.1f}')
+        else:
+            plt.xticks([])
+
+plt.tight_layout()
+
 
