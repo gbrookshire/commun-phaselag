@@ -713,10 +713,15 @@ files = os.listdir(data_dir + 'te/')
 pattern = 'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 diff_type = 'PD(AB)-PD(BA)'
 
-plt.clf()
+figsize = (10, 8)
+for i_rat in range(len(fnames)):
+    plt.figure(i_rat, figsize=figsize)
+plt.figure('average', figsize=figsize)
+
 for i_lf, lf_ratio in enumerate(ratio_levels):
     for i_hf, hf_ratio in enumerate(ratio_levels[::-1]):
-        te = []
+        i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
+        te = [] # hold the results for all the rats
         for i_rat in range(len(fnames)):
             pat = pattern.format(i_rat=i_rat,
                                  lf_ratio=lf_ratio,
@@ -729,24 +734,42 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
             fn = files[match_inx]
             saved_data = np.load(f"{data_dir}te/{fn}",
                                  allow_pickle=True)
-            te_tmp = np.squeeze(saved_data.get('te')[0][diff_type]['diff'])
-            te.append(te_tmp)
+            te_indiv = np.squeeze(saved_data.get('te')[0][diff_type]['diff'])
+            te.append(te_indiv)
+
+            # Plot the results for this individual rat
+            plt.figure(i_rat)
+            plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
+            max_level = np.max(np.abs(te_indiv))
+            levels = np.linspace(-max_level, max_level, 50)
+            plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_indiv.T,
+                         cmap=plt.cm.RdBu_r, levels=levels)
+            #cb = plt.colorbar(format='%.0e')
+            #cb.set_ticks([0, max_level])
+            if i_lf == 0:
+                plt.ylabel(f'HF: {hf_ratio:.1f}')
+            else:
+                plt.yticks([])
+            if i_hf == len(ratio_levels) - 1:
+                plt.xlabel(f'LF: {lf_ratio:.1f}')
+            else:
+                plt.xticks([])
+            if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
+                plt.tight_layout()
+
+        # Plot the average over all the rats
         te = np.stack(te)
         te_avg = np.mean(te, 0)
         mi_params = saved_data.get('mi_params').tolist()
-
-        i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
+        plt.figure('average')
         plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-
         #plt.title(f'LF:{lf_ratio}, HF:{hf_ratio}')
-
         max_level = np.max(np.abs(te_avg))
         levels = np.linspace(-max_level, max_level, 50)
         plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_avg.T,
                      cmap=plt.cm.RdBu_r, levels=levels)
         #cb = plt.colorbar(format='%.0e')
         #cb.set_ticks([0, max_level])
-
         if i_lf == 0:
             plt.ylabel(f'HF: {hf_ratio:.1f}')
         else:
@@ -756,6 +779,12 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
         else:
             plt.xticks([])
 
+plt.figure('average')
 plt.tight_layout()
+plt.savefig(f'{plot_dir}te/tile_by_param_average.png')
 
+for i_rat in range(len(fnames)):
+    plt.figure(i_rat)
+    rat_num = re.search('Rat[0-9]+', fnames[i_rat]).group()
+    plt.savefig(f'{plot_dir}te/tile_by_param_{rat_num}.png')
 
