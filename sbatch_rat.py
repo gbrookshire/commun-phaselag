@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
 Call with:
+# ratioLevels=$(seq 1.5 0.5 6)  # Full tiling analysis
+ratioLevels=$(seq 2 1 6)  # Reduced levels for SNR computation
 for iRat in {0..7}
 do
-    for lfRatio in $(seq 1.5 0.5 6)
+    for lfRatio in $ratioLevels
     do
-        for hfRatio in $(seq 1.5 0.5 6)
+        for hfRatio in $ratioLevels
         do
             echo $iRat $lfRatio $hfRatio
             sbatch_submit.py \
                 -s 'source load_python-simulated_rhythmic_sampling.sh' \
                 -i "python sbatch_rat.py $iRat $lfRatio $hfRatio" \
-                -t 2:00:00 -m 5G -c 5 -d ../slurm_results/
+                -t 48:00:00 -m 20G -c 5 -d ../slurm_results/
         done
     done
 done
@@ -27,9 +29,9 @@ import comlag
 
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
 
-base_data_dir = '../' # Bluebear
-base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/' # Desktop
-data_dir = base_data_dir + 'data/RatData/' 
+base_data_dir = '../'  # Bluebear
+base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
+data_dir = base_data_dir + 'data/RatData/'
 
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat6_20111021_begin1.mat',
@@ -39,7 +41,7 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat47_20140923_begin1_CA3_CSC11_CA1_TT3.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
-f_bw_ratios = np.arange(1.5, 6.1, 0.5) # From ~2 to ~10 cycles
+f_bw_ratios = np.arange(1.5, 6.1, 0.5)  # From ~2 to ~10 cycles
 f_mod = np.arange(4, 16)
 f_car = np.arange(30, 150, 5)
 downsamp_factor = 5
@@ -56,7 +58,7 @@ mi_params = dict(f_mod=f_mod,
                  n_perm_phasebin=0,
                  n_perm_phasebin_indiv=0,
                  n_perm_signal=0,
-                 n_perm_shift=0,
+                 n_perm_shift=100,
                  min_shift=None, max_shift=None,
                  cluster_alpha=0.05,
                  diff_method='both',
@@ -74,7 +76,7 @@ def te_fnc(i_rat, lf_ratio, hf_ratio):
     # Load the data
     d = loadmat(data_dir + fn)
     fs = d['Fs'][0][0]
-    s = [d['Data_EEG'][:,inx] for inx in [1, 2]]
+    s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
 
     # Downsample the data
     if downsamp_factor is not None:
@@ -94,7 +96,8 @@ def te_fnc(i_rat, lf_ratio, hf_ratio):
                                                  **mip)
 
     # Save the data
-    save_fname = f"te_{now}_rat{i_rat}_lfratio-{lf_ratio}_hfratio-{hf_ratio}.npz"
+    save_fname = \
+        f"te_{now}_rat{i_rat}_lfratio-{lf_ratio}_hfratio-{hf_ratio}.npz"
     save_fname = f"{data_dir}te/{save_fname}"
     np.savez(save_fname, te=te_out, mi_params=mi_params, lag_sec=lag_sec)
     print(save_fname)
@@ -104,7 +107,7 @@ def run_single_rat_sbatch():
     i_rat = int(sys.argv[1])
     lf_ratio = float(sys.argv[2])
     hf_ratio = float(sys.argv[3])
-    #te_fnc(i_rat, lf_ratio, hf_ratio)
+    # te_fnc(i_rat, lf_ratio, hf_ratio)
     msg = f"i_rat: {i_rat}, lf ratio: {lf_ratio:.2f}, hf ratio: {hf_ratio:.2f}"
     print(msg)
 
