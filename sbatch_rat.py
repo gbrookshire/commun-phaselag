@@ -30,7 +30,7 @@ import comlag
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
 
 base_data_dir = '../'  # Bluebear
-base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
+#base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
 data_dir = base_data_dir + 'data/RatData/'
 
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
@@ -107,7 +107,7 @@ def run_single_rat_sbatch():
     i_rat = int(sys.argv[1])
     lf_ratio = float(sys.argv[2])
     hf_ratio = float(sys.argv[3])
-    # te_fnc(i_rat, lf_ratio, hf_ratio)
+    te_fnc(i_rat, lf_ratio, hf_ratio)
     msg = f"i_rat: {i_rat}, lf ratio: {lf_ratio:.2f}, hf ratio: {hf_ratio:.2f}"
     print(msg)
 
