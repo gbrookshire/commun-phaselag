@@ -1,21 +1,5 @@
 """
 Look for communication between two brain areas based on phase lag
-
-# Algorithm
-
-Take two areas A and B
-BP-filter the two areas in a low-frequency band (alpha)
-Compute the LF phase difference between A and B at each timepoint
-Make overlapping bins of LF phase difference
-For each LF phase bin
-    Compute gamma-band phase-lag index (PLI) between the areas
-
-Use plain old PAC between areas but with LF phase difference instead of LF phase
-    Compute gamma power in the sender and receiver
-
-2d plot
-- MI b/w brain areas in the gamma band
-
 """
 
 import itertools
@@ -34,6 +18,7 @@ def wrap_to_pi(x):
     x = (x + np.pi) % (2 * np.pi) - np.pi
     return x
 
+
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
     Cross-frequency coupling between two signals.
@@ -47,7 +32,7 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     fs : int,float
         Sampling rate
     nfft : int
-        Size of the FFT window 
+        Size of the FFT window
     n_overlap : int
         Number of samples of overlap in the FFT windows
     f_car : list or ndarray
@@ -843,12 +828,13 @@ def mod_index(x, method):
 def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  f_mod, f_mod_bw,
                                  f_car, f_car_bw,
-                                 lag, n_bins, 
+                                 lag, n_bins,
                                  decimate=None,
                                  n_perm_phasebin=0,
                                  n_perm_phasebin_indiv=0,
                                  n_perm_signal=0,
-                                 n_perm_shift=0, min_shift=None, max_shift=None,
+                                 n_perm_shift=0,
+                                 min_shift=None, max_shift=None,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
                                  diff_method='both',
