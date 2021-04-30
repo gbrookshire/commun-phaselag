@@ -29,6 +29,7 @@ import datetime
 import comlag
 import gcmi
 from tqdm import tqdm
+import copy
 
 plt.ion()
 
@@ -46,6 +47,7 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
 ##################################################
 # Check the length of the recording for each rat #
 ##################################################
+
 rec_len = [loadmat(data_dir + fn)['Data_EEG'].shape[0] for fn in fnames]
 rec_len = [x / 2000 for x in rec_len]  # Length in s
 plt.clf()
@@ -58,9 +60,37 @@ plt.tight_layout()
 plt.savefig(f'{plot_dir}recording_length.png')
 
 
+##########################################
+# Plot a sample of the data for each rat #
+##########################################
+
+labels = ['CA3', 'CA1']
+plt.figure(figsize=(5, 10))
+for n, fn in enumerate(fnames):
+    plt.subplot(7, 1, n + 1)
+    d = loadmat(data_dir + fn)
+    s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+    t = np.arange(s[0].size) / d['Fs'][0][0]
+    for sig, lab in zip(s, labels):
+        plt.plot(t, sig, label=lab)
+    plt.xlim(10, 12.5)
+    ylims = 0.0015
+    plt.ylim(-ylims, ylims)
+    plt.title(re.search('Rat[0-9]+', fn).group())
+    if n < len(fnames) - 1:
+        plt.xticks([])
+
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}example_traces.png')
+
+
 ################################################
 # Plot the PSD for each rat and recording site  #
 ################################################
+
 labels = ['CA3', 'CA1']
 nfft = 2 ** 10
 plt.clf()
@@ -83,6 +113,29 @@ for n, fn in enumerate(fnames):
 plt.xlabel('Frequency (Hz)')
 plt.ylabel('Amplitude')
 plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}spectra.png')
+
+
+###############################################
+# Plot the coherence spectrum for each animal #
+###############################################
+
+fs = 2000
+nfft = 2 ** 12
+
+plt.clf()
+for n, fn in enumerate(fnames):
+    plt.subplot(3, 3, n + 1)
+    d = loadmat(data_dir + fn)
+    s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+    coh, freq = comlag.coherence(*s, fs=fs, nfft=nfft)
+    plt.plot(freq, coh)
+    plt.xlim(0, 100)
+    plt.title(re.search('Rat[0-9]+', fn).group())
+
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Amplitude')
 plt.tight_layout()
 plt.savefig(f'{plot_dir}spectra.png')
 
@@ -986,7 +1039,9 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
             # gives more stable values than taking the z-score across all
             # values, collapsing over cells
             # te_indiv = stats.zscore(te_indiv, axis=0)[0, :, :]
-            te_indiv = stats.zscore(te_indiv, axis=None)[0, :, :]
+            te_indiv = stats.zscore(te_indiv, axis=None)
+
+            te_indiv = te_indiv[0, :, :]
             te.append(te_indiv)
             max_level = np.max(np.abs(te_indiv))
             max_abs_vals[i_hf, i_lf, i_rat] = max_level
@@ -999,20 +1054,21 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
             # Plot the results for this individual rat
             plt.figure(i_rat)
             plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-            levels = np.linspace(-max_level, max_level, 50)
-            # levels = np.linspace(-10, 10, 50)
-            plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_indiv.T,
-                         cmap=plt.cm.RdBu_r, levels=levels)
-            # cb = plt.colorbar(format='%.0e')
-            # cb.set_ticks([0, max_level])
-            # plt.text(5, 120, f'{max_level:1.1e}')
-            plt.text(5, 120, f'{max_level:.1f}')
+            plt.imshow(te_indiv.T, origin="lower",
+                       interpolation="none",
+                       aspect='auto',
+                       vmin=-max_level, vmax=max_level,
+                       cmap=plt.cm.RdBu_r)
+            plt.text(1, 20, f'{max_level:.1f}')
             if i_lf == 0:
                 plt.ylabel(f'HF: {hf_ratio:.1f}')
+                plt.yticks(range(len(mi_params['f_car']))[::4],
+                           mi_params['f_car'][::4])
             else:
                 plt.yticks([])
             if i_hf == len(ratio_levels) - 1:
                 plt.xlabel(f'LF: {lf_ratio:.1f}')
+                plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
             else:
                 plt.xticks([])
             if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
@@ -1026,22 +1082,25 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
         mi_params = saved_data.get('mi_params').tolist()
         plt.figure('average')
         plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-        # plt.title(f'LF:{lf_ratio}, HF:{hf_ratio}')
-        levels = np.linspace(-max_level, max_level, 50)
-        plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_avg.T,
-                     cmap=plt.cm.RdBu_r, levels=levels)
-        # cb = plt.colorbar(format='%.0e')
-        # cb.set_ticks([0, max_level])
-        # plt.text(5, 120, f'{max_level:1.1e}')
-        plt.text(5, 120, f'{max_level:.1f}')
+        plt.imshow(te_avg.T, origin="lower",
+                   interpolation="none",
+                   aspect='auto',
+                   vmin=-max_level, vmax=max_level,
+                   cmap=plt.cm.RdBu_r)
+        plt.text(1, 20, f'{max_level:.1f}')
         if i_lf == 0:
             plt.ylabel(f'HF: {hf_ratio:.1f}')
+            plt.yticks(range(len(mi_params['f_car']))[::4],
+                       mi_params['f_car'][::4])
         else:
             plt.yticks([])
         if i_hf == len(ratio_levels) - 1:
             plt.xlabel(f'LF: {lf_ratio:.1f}')
+            plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
         else:
             plt.xticks([])
+        if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
+            plt.tight_layout()
 
 plt.figure('average')
 plt.tight_layout()
@@ -1050,7 +1109,7 @@ plt.savefig(f'{plot_dir}te/tile_by_param_average_zscore.png')
 for i_rat in range(len(fnames)):
     plt.figure(i_rat)
     rat_num = re.search('Rat[0-9]+', fnames[i_rat]).group()
-    plt.savefig(f'{plot_dir}te/tile_by_param_{rat_num}_zscore.png')
+    plt.savefig(f'{plot_dir}te/tile_by_param_{rat_num}_zscore_SHIFTED.png')
 
 plt.figure('color-scale')
 plt.clf()
@@ -1081,3 +1140,91 @@ plt.xticks([])
 plt.yticks([])
 plt.tight_layout()
 plt.savefig(f'{plot_dir}te/tile_by_param_colorbar_zscore.png')
+
+
+##################################
+# Dig into a specific comparison #
+##################################
+
+"""
+Rat 44, bottom left with neighboring points that go in opposite directions
+"""
+
+lf_ratio = 2.0
+hf_ratio = 3.0
+i_rat = 4
+fn = fnames[i_rat]
+
+ratio_levels = np.arange(2.0, 6.01, 1.0)
+files = os.listdir(data_dir + 'te/')
+date = '2021-04-26'
+pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
+pattern = f'te_{date}-[0-9]+_{pattern}'
+diff_type = 'PD(AB)-PD(BA)'
+
+pat = pattern.format(i_rat=i_rat,
+                     lf_ratio=lf_ratio,
+                     hf_ratio=hf_ratio)
+match_inx = [i for i, f in enumerate(files) if re.match(pat, f)]
+if len(match_inx) > 1:
+    raise(Exception('More than one matching file found'))
+else:
+    match_inx = match_inx[0]
+fn = files[match_inx]
+saved_data = np.load(f"{data_dir}te/{fn}", allow_pickle=True)
+mi_params = saved_data.get('mi_params').item()
+te = saved_data.get('te')[0][diff_type]
+
+for i_cond, (cond, te_cond) in enumerate(te.items()):
+    plt.subplot(1, 3, i_cond + 1)
+    plt.title(cond)
+    te_cond = np.squeeze(te_cond[0, :, :])
+
+    # Plot the average over all the rats
+    max_level = np.max(np.abs(te_cond))
+    mi_params = saved_data.get('mi_params').tolist()
+    plt.imshow(te_cond.T,
+               origin="lower",
+               interpolation="none",
+               aspect='auto',
+               vmin=-max_level, vmax=max_level,
+               cmap=plt.cm.RdBu_r)
+    plt.yticks(range(len(mi_params['f_car']))[::4],
+               mi_params['f_car'][::4])
+    plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
+plt.tight_layout()
+
+# Choose the cells of the analysis to look at
+i_fm = [4, 5, 6]
+i_fc = [4]
+
+mi_params_orig = copy.deepcopy(mi_params)
+mi_params['f_mod'] = mi_params['f_mod'][i_fm]
+mi_params['f_car'] = mi_params['f_car'][i_fc]
+mi_params['f_mod_bw'] = mi_params['f_mod'] / lf_ratio
+mi_params['f_car_bw'] = mi_params['f_car'] / hf_ratio
+mi_params['n_perm_shift'] = 0
+mi_params['return_phase_bins'] = True
+
+d = loadmat(data_dir + fnames[i_rat])
+fs = d['Fs'][0][0]
+s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+
+# Downsample the data
+downsamp_factor = 5
+s = [signal.decimate(sig, downsamp_factor) for sig in s]
+fs /= downsamp_factor
+
+lag_sec = 0.006
+lag = int(lag_sec * fs)
+mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                  fs=fs,
+                                                  lag=[lag],
+                                                  **mi_params)
+
+# mi dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
+plt.clf()
+for i_freq in range(3):
+    plt.subplot(3, 1, i_freq + 1)
+    x = np.squeeze(mi[0, i_freq, 0, 0, :2, :])
+    plt.plot(x.T)

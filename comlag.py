@@ -19,6 +19,44 @@ def wrap_to_pi(x):
     return x
 
 
+def coherence(s_a, s_b, fs, nfft, n_overlap=None):
+    """
+    Compute coherence between the two signals
+    """
+    if n_overlap is None:
+        n_overlap = nfft // 2
+    s = [s_a, s_b]
+
+    # Split the data into segments of length nfft
+    s_split = [_buffer(sig, nfft, int(nfft / 2)) for sig in s]
+
+    # Apply hanning taper to each segment
+    taper = np.hanning(nfft)
+    s_taper = [_match_dims(taper, sig) * sig for sig in s_split]
+
+    # FFT of each segment
+    s_fft = [np.fft.fft(sig, nfft, axis=0) for sig in s_taper]
+
+    # Coherence
+    xspec = s_fft[0] * np.conj(s_fft[1])  # Cross-spectrum
+    num = np.abs(np.nansum(xspec, axis=-1))  # Combine over segments
+    denom_a = np.nansum(np.abs(s_fft[0]) ** 2, axis=-1)
+    denom_b = np.nansum(np.abs(s_fft[1]) ** 2, axis=-1)
+    denom = np.sqrt(denom_a * denom_b)
+    coh_data = num / denom
+
+    # Only keep the meaningful frequencies
+    n_keep_freqs = int(np.floor(nfft / 2))
+    coh_data = coh_data[:n_keep_freqs, ...]
+
+    # Compute the modulation frequencies
+    freq = np.arange(nfft - 1) * fs / nfft
+    freq = freq[:n_keep_freqs]
+
+    return coh_data, freq
+
+
+
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
     Cross-frequency coupling between two signals.
@@ -838,6 +876,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
                                  diff_method='both',
+                                 return_phase_bins=False,
                                  verbose=True):
     """
     Compute conditional mutual information between two signals, and lagged
@@ -916,17 +955,18 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         The method to use to test for phase-dependence of communication. Must
         be a value accepted by mod_index().
     calc_type : int
-        How to calculate the directionality. 
+        How to calculate the directionality.
         1: Mutual information conditioned on a lagged copy of each signal
             I(A;B|LA) and I(A;B|LB)
         2: Transfer entropy
             I(LA;B|LB) and I(A;LB|LA)
+    return_phase_bins : bool
+        If true, return the TE values for each individual phase bin.
     diff_method : str
         How to calculate the difference.
         'PD(AB)-PD(BA)': PhaseDep(TE(A-->B)) - PhaseDep(TE(B-->A))
         'PD(AB-BA)': PhaseDep( TE(A-->B) - TE(B-->A) )
         'both': Calculate the difference using both of the methods above
-        
     """
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
@@ -937,12 +977,12 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     assert calc_type in (1, 2)
 
     assert isinstance(f_car_bw, (float, int, np.ndarray)), \
-            "f_car_bw must be a scalar or a numpy array"
+        "f_car_bw must be a scalar or a numpy array"
     if isinstance(f_car_bw, (float, int)):
         f_car_bw = np.ones(f_car.shape) * f_car_bw
 
     assert isinstance(f_mod_bw, (float, int, np.ndarray)), \
-            "f_mod_bw must be a scalar or a numpy array"
+        "f_mod_bw must be a scalar or a numpy array"
     if isinstance(f_mod_bw, (float, int)):
         f_mod_bw = np.ones(f_mod.shape) * f_mod_bw
 
@@ -952,9 +992,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     else:
         assert decimate > 0, 'decimate must be positive'
         assert isinstance(decimate, int), \
-                f'decimate must be an int, but got a {type(decimate)}'
+            f'decimate must be an int, but got a {type(decimate)}'
+
         def decim(x):
-            return x[..., ::decimate] # Decimate the last axis
+            return x[..., ::decimate]  # Decimate the last axis
 
     if isinstance(n_perm_phasebin, str):
         assert n_perm_phasebin == 'full', \
@@ -973,7 +1014,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             max_shift = len(s['a']) - np.max(lag)
 
         # Cluster analysis currently ignores multiple lags
-        if len(lag) > 1: 
+        if len(lag) > 1:
             raise NotImplementedError
         else:
             i_lag = 0
@@ -1000,7 +1041,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         n_perm = 0
 
     assert diff_method in ('PD(AB)-PD(BA)', 'PD(AB-BA)', 'both'), \
-            'diff_method "{diff_method}" not recognized'
+        'diff_method "{diff_method}" not recognized'
 
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -1009,26 +1050,23 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     # Initialize array to hold the number of observations in each bin
     counts = np.full([len(f_mod), n_bins], np.nan)
 
-    # Get indices for the boundaries of each epoch, for after we append epochs
-    if s_a.ndim == 2:
-        epoch_boundaries = np.arange(0, s_a.size, s_a.shape[0])
-
     for i_fm in range(len(f_mod)):
         # Compute the LF phase-difference of each signal
         fm = f_mod[i_fm]
         fm_bw = f_mod_bw[i_fm]
-        if verbose: print(fm)
+        if verbose:
+            print(fm)
         filt = {sig: bp_filter(s[sig].T,
                                fm - (fm_bw / 2),
                                fm + (fm_bw / 2),
                                fs,
                                2).T
-                    for sig in 'ab'}
+                for sig in 'ab'}
         phase = {sig: np.angle(hilbert(filt[sig], axis=0))
-                    for sig in 'ab'}
+                 for sig in 'ab'}
         phase_diff = phase['a'] - phase['b']
         phase_diff = wrap_to_pi(phase_diff)
-        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1  # Binned
         # Append trials over time if data includes multiple epochs. Due to the
         # lag in the CMI, this will result in a small number of samples being
         # conditioned on data from a different epoch.
@@ -1047,16 +1085,16 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                    fc - (fc_bw / 2),
                                    fc + (fc_bw / 2),
                                    fs, 2).T
-                        for sig in 'ab'}
+                    for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
             # This makes mutual information more informative
             h = {sig: hilbert(filt[sig], axis=0) for sig in 'ab'}
             sig_2d_orig = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
-                            for sig in 'ab'}
+                           for sig in 'ab'}
 
             for i_perm_sig in range(n_perm_signal + 1):
 
-                # Randomize signals A and B within each epoch 
+                # Randomize signals A and B within each epoch
                 if i_perm_sig > 0:
                     for i_epoch in range(s_a.shape[1]):
                         if np.random.choice([True, False]):
@@ -1068,9 +1106,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 # Append epochs
                 if s_a.ndim == 2:
                     sig_2d_append = {sig: np.reshape(sig_2d_orig[sig],
-                                                (2, -1),
-                                                order='F')
-                                        for sig in 'ab'}
+                                                     (2, -1),
+                                                     order='F')
+                                     for sig in 'ab'}
                 else:
                     sig_2d_append = sig_2d_orig.copy()
 
@@ -1078,6 +1116,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 for phase_bin in np.unique(phase_diff):
 
                     phase_sel = phase_diff == phase_bin
+
                     def select_samps(x):
                         """
                         Helper function to select the samples with the right LF
@@ -1089,15 +1128,15 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                     if i_fc == 0:
                         counts[i_fm, phase_bin] = np.sum(phase_sel)
 
-                    # Randomly shift the HF time-series 
+                    # Randomly shift the HF time-series
                     for i_perm_shift in range(n_perm_shift + 1):
                         sig_2d = copy.deepcopy(sig_2d_append)
-                        if i_perm_shift > 0: # Don't shift the real data
+                        if i_perm_shift > 0:  # Don't shift the real data
                             # Shift signal A
                             sig_2d['a'] = np.roll(sig_2d['a'],
-                                                np.random.randint(min_shift,
+                                                  np.random.randint(min_shift,
                                                                     max_shift),
-                                                axis=1)
+                                                  axis=1)
                         # Compute CMI in each direction
                         for i_lag in range(len(lag)):
 
@@ -1107,10 +1146,11 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                 Because this rolls samples from the end to the
                                 beginning, it will result in some samples being
                                 counted in the MI calculation even though they
-                                happened far apart in the real data. This will only
-                                occur for a very small number of samples (number of
-                                the lag), so it's negligible as long as the length
-                                of the data is much larger than the lag.
+                                happened far apart in the real data. This will
+                                only occur for a very small number of samples
+                                (number of the lag), so it's negligible as long
+                                as the length of the data is much larger than
+                                the lag.
                                 """
                                 return np.roll(x, lag[i_lag], axis=1)
 
@@ -1123,7 +1163,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                                 select_samps(L(sig_2d[direc])))
                                 elif calc_type == 2:
                                     # Compute I(LA;B|LB) and I(A;LB|LA)
-                                    s1, s2 = ('a', 'b') if direc == 'a' else ('b', 'a')
+                                    if direc == 'a':
+                                        s1, s2 = ('a', 'b')
+                                    else:
+                                        s1, s2 = ('b', 'a')
                                     i = gcmi.gccmi_ccc(
                                                 select_samps(L(sig_2d[s1])),
                                                 select_samps(sig_2d[s2]),
@@ -1132,17 +1175,21 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                     raise(NotImplementedError)
 
                                 i_perm = max(i_perm_sig, i_perm_shift)
-                                mi[i_perm, i_fm, i_fc, i_lag, i_direc, phase_bin] = i
+                                mi[i_perm,
+                                   i_fm,
+                                   i_fc,
+                                   i_lag,
+                                   i_direc,
+                                   phase_bin] = i
 
     # Compute the permutation test by shuffling TE values across phase bins
     # Make a generator object to shuffle the phase bins
     if n_perm_phasebin_indiv:
-        n_perm_phasebin = n_perm_phasebin_indiv 
+        n_perm_phasebin = n_perm_phasebin_indiv
     if isinstance(n_perm_phasebin, int):
         perm_indices = (np.random.choice(n_bins, n_bins, False)
-                            for _ in range(n_perm_phasebin))
+                        for _ in range(n_perm_phasebin))
     elif n_perm_phasebin == 'full':
-        #perm_indices = itertools.permutations(range(n_bins))
         raise(NotImplementedError)
 
     # Shuffle the data for each permutation
@@ -1167,10 +1214,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         mi_c['PD(AB)-PD(BA)'] = mi_comod
     if diff_method in ('PD(AB-BA)', 'both'):
         mi_diff_shape = list(mi.shape)
-        mi_diff_shape[4] += 1 # One extra 'column' for the directions
+        mi_diff_shape[4] += 1  # One extra 'column' for the directions
         mi_diff = np.full(mi_diff_shape, np.nan)
-        mi_diff[:,:,:,:,:2,:] = mi
-        mi_diff[:,:,:,:,2,:] = mi[:,:,:,:,0,:] - mi[:,:,:,:,1,:]
+        mi_diff[:, :, :, :, :2, :] = mi
+        mi_diff[:, :, :, :, 2, :] = mi[:, :, :, :, 0, :] - mi[:, :, :, :, 1, :]
         mi = mi_diff
         # Compute a phase-dependence index for each combination of LF and HF
         mi_comod = mod_index(mi, method)
@@ -1184,11 +1231,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     if n_perm > 0:
         stat_info = {}
         for diff_meth, mi_comod in mi_c.items():
-
             # Threshold data for clustering by finding phase-lag TE differences
-            # that are less than the percentiles defined by the cluster alpha value
+            # that are less than the percentiles defined by cluster alpha value
             quantiles = [100 * (cluster_alpha / 2),
-                        100 * (1 - (cluster_alpha / 2))]
+                         100 * (1 - (cluster_alpha / 2))]
             thresh = np.percentile(mi_comod['diff'], quantiles)
             thresh_mi_comod = np.zeros(mi_comod['diff'].shape)
             thresh_mi_comod[mi_comod['diff'] < thresh[0]] = -1
@@ -1196,7 +1242,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
             # Cluster statistic: Summed absolute z-score
             z_mi_comod = stats.zscore(mi_comod['diff'], axis=None)
-            stat_fun = lambda x: np.sum(np.abs(x))
+
+            def stat_fun(x):
+                return np.sum(np.abs(x))
 
             # Find clusters for each permutation, including the empirical data
             clust_labels = np.full(thresh_mi_comod.shape, np.nan)
@@ -1229,17 +1277,19 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
             # Package the cluster stat results
             clust_stat_info = dict(labels=clust_labels[0, ...],
-                                stats=cluster_stats[0],
-                                cluster_thresh=cluster_thresh,
-                                max_per_perm=max_stat_per_perm,
-                                pval=pval)
+                                   stats=cluster_stats[0],
+                                   cluster_thresh=cluster_thresh,
+                                   max_per_perm=max_stat_per_perm,
+                                   pval=pval)
             stat_info[diff_meth] = clust_stat_info
 
     else:
         stat_info = None
 
-    return mi_c, stat_info
-
+    if return_phase_bins:
+        return mi_c, mi, stat_info
+    else:
+        return mi_c, stat_info
 
 
 def cfc_phaselag_transferentropy_OLD(s_a, s_b, fs,
