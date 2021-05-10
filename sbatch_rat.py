@@ -83,6 +83,12 @@ def te_fnc(i_rat, lf_ratio, hf_ratio):
         s = [signal.decimate(sig, downsamp_factor) for sig in s]
         fs /= downsamp_factor
 
+    # Split the data into epochs
+    epoch_dur = 1.0  # seconds
+    epoch_len = int(epoch_dur * fs)
+    n_splits = len(s[0]) / epoch_len
+    s = [np.stack(np.split(sig, n_splits), axis=1) for sig in s]
+
     # Get the filters ready
     mip = copy.deepcopy(mi_params)
     mip['f_mod_bw'] = mip['f_mod'] / lf_ratio
