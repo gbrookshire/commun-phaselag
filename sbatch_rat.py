@@ -30,7 +30,7 @@ import comlag
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
 
 base_data_dir = '../'  # Bluebear
-#base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
+# base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
 data_dir = base_data_dir + 'data/RatData/'
 
 fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
@@ -57,8 +57,8 @@ mi_params = dict(f_mod=f_mod,
                  decimate=None,
                  n_perm_phasebin=0,
                  n_perm_phasebin_indiv=0,
-                 n_perm_signal=0,
-                 n_perm_shift=100,
+                 n_perm_signal=100,
+                 n_perm_shift=0,
                  min_shift=None, max_shift=None,
                  cluster_alpha=0.05,
                  diff_method='both',
