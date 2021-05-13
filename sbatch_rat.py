@@ -42,9 +42,10 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
 f_bw_ratios = np.arange(1.5, 6.1, 0.5)  # From ~2 to ~10 cycles
-f_mod = np.arange(4, 16)
-f_car = np.arange(30, 150, 5)
-downsamp_factor = 5
+f_mod = np.arange(4, 16)  # Centers of the LF filters (Hz)
+f_car = np.arange(30, 150, 5)  # Centers of the HF filters (Hz)
+downsamp_factor = 5  # Factor by which to downsample the data
+epoch_dur = 5.0  # in seconds
 
 # Parameters for the MI phase-lag analysis
 k_perm = 0
@@ -84,10 +85,10 @@ def te_fnc(i_rat, lf_ratio, hf_ratio):
         fs /= downsamp_factor
 
     # Split the data into epochs
-    epoch_dur = 1.0  # seconds
     epoch_len = int(epoch_dur * fs)
-    n_splits = len(s[0]) / epoch_len
-    s = [np.stack(np.split(sig, n_splits), axis=1) for sig in s]
+    n_splits = len(s[0]) // epoch_len
+    sig_len = n_splits * epoch_len
+    s = [np.stack(np.split(sig[:sig_len], n_splits), axis=1) for sig in s]
 
     # Get the filters ready
     mip = copy.deepcopy(mi_params)
