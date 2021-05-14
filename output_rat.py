@@ -22,6 +22,7 @@ import numpy as np
 from scipy.io import loadmat
 from scipy import signal, stats
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import re
 import os
 from joblib import Parallel, delayed
@@ -876,6 +877,7 @@ plt.savefig(f'{plot_dir}te/tile_by_param_filter_kernels.png')
 # Analyses run on Bluebear                       #
 ##################################################
 
+# Full tiled analyses
 ratio_levels = np.arange(1.5, 6.1, 0.5)
 # ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
@@ -883,19 +885,38 @@ date = '2021-04-15'
 pattern = 'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
 diff_type = 'PD(AB)-PD(BA)'
+use_zscore = False
+direc = 'a'
+plot_fname_stem = plot_dir + "te/tile_by_param_{anim}_{direc}.png"
 
-figsize = (10, 8)
-for i_rat in range(len(fnames)):
-    plt.figure(i_rat, figsize=figsize)
-plt.figure('average', figsize=figsize)
-plt.figure('color-scale', figsize=figsize)
+# "SNR" analyses
+ratio_levels = np.arange(2.0, 6.01, 1.0)
+files = os.listdir(data_dir + 'te/')
+date = '2021-04-26'
+pattern = 'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
+pattern = f'te_{date}-[0-9]+_{pattern}'
+diff_type = 'PD(AB)-PD(BA)'
+use_zscore = True
+direc = 'b'
+plot_fname_stem = plot_dir + "te/tile_by_param_{anim}_{direc}_zscore.png"
+
+ytick_spacing = 4
+xtick_spacing = 4
+common_color_scale = True
+directions = ['a', 'b', 'diff']
+
+te_all = np.full([len(ratio_levels),
+                  len(ratio_levels),
+                  12,
+                  24,
+                  3,
+                  len(fnames)],
+                 np.nan)  # LF ratio, HF ratio, LF freq, HF freq, direc, animal
 
 max_abs_vals = np.full([len(ratio_levels), len(ratio_levels), len(fnames) + 1],
                        np.nan)
 for i_lf, lf_ratio in enumerate(ratio_levels):
     for i_hf, hf_ratio in enumerate(ratio_levels[::-1]):
-        i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
-        te = []  # hold the results for all the rats
         for i_rat in range(len(fnames)):
             pat = pattern.format(i_rat=i_rat,
                                  lf_ratio=lf_ratio,
@@ -909,65 +930,118 @@ for i_lf, lf_ratio in enumerate(ratio_levels):
             saved_data = np.load(f"{data_dir}te/{fn}",
                                  allow_pickle=True)
             mi_params = saved_data.get('mi_params').item()
-            te_indiv = np.squeeze(saved_data.get('te')[0][diff_type]['diff'])
-            te.append(te_indiv)
-            max_level = np.max(np.abs(te_indiv))
-            max_abs_vals[i_hf, i_lf, i_rat] = max_level
+            for i_direc, direc in enumerate(['a', 'b', 'diff']):
+                te_indiv = saved_data.get('te')[0][diff_type][direc]
+                if use_zscore:
+                    te_indiv = stats.zscore(te_indiv, axis=None)
+                te_indiv = np.squeeze(te_indiv[0, ...])  # Get real data
+                te_all[i_lf, i_hf, :, :, i_direc, i_rat] = te_indiv
+                max_level = np.max(np.abs(te_indiv))
+                max_abs_vals[i_hf, i_lf, i_rat] = max_level
 
-            # Plot the results for this individual rat
-            plt.figure(i_rat)
+for i_direc, direc in enumerate(directions):
+    plt.close('all')
+    figsize = (10, 8)
+    for i_rat in range(len(fnames)):
+        plt.figure(i_rat, figsize=figsize)
+    plt.figure('average', figsize=figsize)
+    for i_lf, lf_ratio in enumerate(ratio_levels):
+        for i_hf, hf_ratio in enumerate(ratio_levels[::-1]):
+            i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
+            for i_rat in range(len(fnames)):
+                # Plot the results for this individual rat
+                plt.figure(i_rat)
+                plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
+                te_x = te_all[i_lf, i_hf, :, :, i_direc, i_rat]
+                if common_color_scale:
+                    if direc == 'diff':
+                        dirslice = -1
+                    else:
+                        dirslice = slice(0, 2)
+                    max_level = np.max(np.abs(te_all[:, :, :, :,
+                                                     dirslice, i_rat]))
+                else:
+                    max_level = np.max(np.abs(te_x))
+                plt.imshow(te_x.T, origin="lower",
+                           interpolation="none",
+                           aspect='auto',
+                           vmin=-max_level, vmax=max_level,
+                           cmap=plt.cm.RdBu_r)
+                if i_plot == 1:
+                    if use_zscore:
+                        label = f'{max_level:.1f}'
+                    else:
+                        label = f'{max_level:.1e}'
+                    plt.text(1, 20, label)
+                if i_lf == 0:
+                    plt.ylabel(f'HF: {hf_ratio:.1f}')
+                    plt.yticks(range(len(mi_params['f_car']))[::ytick_spacing],
+                               mi_params['f_car'][::ytick_spacing])
+                else:
+                    plt.yticks([])
+                if i_hf == len(ratio_levels) - 1:
+                    plt.xlabel(f'LF: {lf_ratio:.1f}')
+                    plt.xticks(range(len(mi_params['f_mod']))[::xtick_spacing],
+                               mi_params['f_mod'][::xtick_spacing])
+                else:
+                    plt.xticks([])
+                if lf_ratio == max(ratio_levels) \
+                        and hf_ratio == max(ratio_levels):
+                    plt.tight_layout()
+
+            # Plot the average over all the rats
+            te_avg = np.mean(te_all[i_lf, i_hf, :, :, i_direc, :], axis=-1)
+            if common_color_scale:
+                if direc == 'diff':
+                    dirslice = -1
+                else:
+                    dirslice = slice(0, 2)
+                max_level = np.max(np.abs(np.mean(te_all[:, :, :, :,
+                                                         dirslice, :],
+                                                  axis=-1)))
+            else:
+                max_level = np.max(np.abs(np.mean(te_all[i_lf, i_hf, ...],
+                                                  axis=-1)))
+            max_abs_vals[i_hf, i_lf, -1] = max_level
+            mi_params = saved_data.get('mi_params').tolist()
+            plt.figure('average')
             plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-            levels = np.linspace(-max_level, max_level, 50)
-            plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_indiv.T,
-                         cmap=plt.cm.RdBu_r, levels=levels)
-            # cb = plt.colorbar(format='%.0e')
-            # cb.set_ticks([0, max_level])
-            plt.text(5, 120, f'{max_level:1.1e}')
+            plt.imshow(te_avg.T, origin="lower",
+                       interpolation="none",
+                       aspect='auto',
+                       vmin=-max_level, vmax=max_level,
+                       cmap=plt.cm.RdBu_r)
+            if i_plot == 1:
+                if use_zscore:
+                    label = f'{max_level:.1f}'
+                else:
+                    label = f'{max_level:.1e}'
+                plt.text(1, 20, label)
             if i_lf == 0:
                 plt.ylabel(f'HF: {hf_ratio:.1f}')
+                plt.yticks(range(len(mi_params['f_car']))[::ytick_spacing],
+                           mi_params['f_car'][::ytick_spacing])
             else:
                 plt.yticks([])
             if i_hf == len(ratio_levels) - 1:
                 plt.xlabel(f'LF: {lf_ratio:.1f}')
+                plt.xticks(range(len(mi_params['f_mod']))[::xtick_spacing],
+                           mi_params['f_mod'][::xtick_spacing])
             else:
                 plt.xticks([])
             if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
                 plt.tight_layout()
 
-        # Plot the average over all the rats
-        te = np.stack(te)
-        te_avg = np.mean(te, 0)
-        max_level = np.max(np.abs(te_avg))
-        max_abs_vals[i_hf, i_lf, -1] = max_level
-        mi_params = saved_data.get('mi_params').tolist()
-        plt.figure('average')
-        plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-        # plt.title(f'LF:{lf_ratio}, HF:{hf_ratio}')
-        levels = np.linspace(-max_level, max_level, 50)
-        plt.contourf(mi_params['f_mod'], mi_params['f_car'], te_avg.T,
-                     cmap=plt.cm.RdBu_r, levels=levels)
-        # cb = plt.colorbar(format='%.0e')
-        # cb.set_ticks([0, max_level])
-        plt.text(5, 120, f'{max_level:1.1e}')
-        if i_lf == 0:
-            plt.ylabel(f'HF: {hf_ratio:.1f}')
-        else:
-            plt.yticks([])
-        if i_hf == len(ratio_levels) - 1:
-            plt.xlabel(f'LF: {lf_ratio:.1f}')
-        else:
-            plt.xticks([])
+    plt.figure('average')
+    plt.tight_layout()
+    plt.savefig(plot_fname_stem.format(anim='average', direc=direc))
 
-plt.figure('average')
-plt.tight_layout()
-plt.savefig(f'{plot_dir}te/tile_by_param_average.png')
+    for i_rat in range(len(fnames)):
+        plt.figure(i_rat)
+        rat_num = re.search('Rat[0-9]+', fnames[i_rat]).group()
+        plt.savefig(plot_fname_stem.format(anim=rat_num, direc=direc))
 
-for i_rat in range(len(fnames)):
-    plt.figure(i_rat)
-    rat_num = re.search('Rat[0-9]+', fnames[i_rat]).group()
-    plt.savefig(f'{plot_dir}te/tile_by_param_{rat_num}.png')
-
-plt.figure('color-scale')
+plt.figure('color-scale', figsize=figsize)
 for i_rat in range(len(fnames)):
     plt.subplot(3, 3, i_rat + 1)
     plt.title(re.search('Rat[0-9]+', fnames[i_rat]).group())
@@ -994,152 +1068,7 @@ cb.set_ticks([0, max_abs_vals[:, :, -1].max()])
 plt.xticks([])
 plt.yticks([])
 plt.tight_layout()
-plt.savefig(f'{plot_dir}te/tile_by_param_colorbar.png')
-
-
-##############################################################
-# SNR after tiling the space of HF and LF filter bandwidths  #
-# Analyses run on Bluebear                                   #
-##############################################################
-
-ratio_levels = np.arange(2.0, 6.01, 1.0)
-files = os.listdir(data_dir + 'te/')
-date = '2021-04-26'
-pattern = 'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
-pattern = f'te_{date}-[0-9]+_{pattern}'
-diff_type = 'PD(AB)-PD(BA)'
-
-figsize = (10, 8)
-for i_rat in range(len(fnames)):
-    plt.figure(i_rat, figsize=figsize)
-plt.figure('average', figsize=figsize)
-plt.figure('color-scale', figsize=figsize)
-
-max_abs_vals = np.full([len(ratio_levels), len(ratio_levels), len(fnames) + 1],
-                       np.nan)
-for i_lf, lf_ratio in enumerate(ratio_levels):
-    for i_hf, hf_ratio in enumerate(ratio_levels[::-1]):
-        i_plot = (i_hf * len(ratio_levels)) + i_lf + 1
-        te = []  # hold the results for all the rats
-        for i_rat in range(len(fnames)):
-            pat = pattern.format(i_rat=i_rat,
-                                 lf_ratio=lf_ratio,
-                                 hf_ratio=hf_ratio)
-            match_inx = [i for i, f in enumerate(files) if re.match(pat, f)]
-            if len(match_inx) > 1:
-                raise(Exception('More than one matching file found'))
-            else:
-                match_inx = match_inx[0]
-            fn = files[match_inx]
-            saved_data = np.load(f"{data_dir}te/{fn}",
-                                 allow_pickle=True)
-            mi_params = saved_data.get('mi_params').item()
-            te_indiv = np.squeeze(saved_data.get('te')[0][diff_type]['diff'])
-            # Take the z-score across shuffled baselines for each "cell". This
-            # gives more stable values than taking the z-score across all
-            # values, collapsing over cells
-            # te_indiv = stats.zscore(te_indiv, axis=0)[0, :, :]
-            te_indiv = stats.zscore(te_indiv, axis=None)
-
-            te_indiv = te_indiv[0, :, :]
-            te.append(te_indiv)
-            max_level = np.max(np.abs(te_indiv))
-            max_abs_vals[i_hf, i_lf, i_rat] = max_level
-
-            # # Look at the maximum z-value in the real vs shuffled data
-            # max_per_shuff = np.max(np.max(te_indiv, axis=2), axis=1)
-            # plt.hist(max_per_shuff[1:])
-            # plt.axvline(max_per_shuff[0], color='r')
-
-            # Plot the results for this individual rat
-            plt.figure(i_rat)
-            plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-            plt.imshow(te_indiv.T, origin="lower",
-                       interpolation="none",
-                       aspect='auto',
-                       vmin=-max_level, vmax=max_level,
-                       cmap=plt.cm.RdBu_r)
-            plt.text(1, 20, f'{max_level:.1f}')
-            if i_lf == 0:
-                plt.ylabel(f'HF: {hf_ratio:.1f}')
-                plt.yticks(range(len(mi_params['f_car']))[::4],
-                           mi_params['f_car'][::4])
-            else:
-                plt.yticks([])
-            if i_hf == len(ratio_levels) - 1:
-                plt.xlabel(f'LF: {lf_ratio:.1f}')
-                plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
-            else:
-                plt.xticks([])
-            if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
-                plt.tight_layout()
-
-        # Plot the average over all the rats
-        te = np.stack(te)
-        te_avg = np.mean(te, 0)
-        max_level = np.max(np.abs(te_avg))
-        max_abs_vals[i_hf, i_lf, -1] = max_level
-        mi_params = saved_data.get('mi_params').tolist()
-        plt.figure('average')
-        plt.subplot(len(ratio_levels), len(ratio_levels), i_plot)
-        plt.imshow(te_avg.T, origin="lower",
-                   interpolation="none",
-                   aspect='auto',
-                   vmin=-max_level, vmax=max_level,
-                   cmap=plt.cm.RdBu_r)
-        plt.text(1, 20, f'{max_level:.1f}')
-        if i_lf == 0:
-            plt.ylabel(f'HF: {hf_ratio:.1f}')
-            plt.yticks(range(len(mi_params['f_car']))[::4],
-                       mi_params['f_car'][::4])
-        else:
-            plt.yticks([])
-        if i_hf == len(ratio_levels) - 1:
-            plt.xlabel(f'LF: {lf_ratio:.1f}')
-            plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
-        else:
-            plt.xticks([])
-        if lf_ratio == max(ratio_levels) and hf_ratio == max(ratio_levels):
-            plt.tight_layout()
-
-plt.figure('average')
-plt.tight_layout()
-plt.savefig(f'{plot_dir}te/tile_by_param_average_zscore.png')
-
-for i_rat in range(len(fnames)):
-    plt.figure(i_rat)
-    rat_num = re.search('Rat[0-9]+', fnames[i_rat]).group()
-    plt.savefig(f'{plot_dir}te/tile_by_param_{rat_num}_zscore_SHIFTED.png')
-
-plt.figure('color-scale')
-plt.clf()
-for i_rat in range(len(fnames)):
-    plt.subplot(3, 3, i_rat + 1)
-    plt.title(re.search('Rat[0-9]+', fnames[i_rat]).group())
-    plt.imshow(max_abs_vals[:, :, i_rat],
-               vmin=0)
-    cb = plt.colorbar(format='%.0f')
-    cb.set_ticks([0,
-                  max_abs_vals[:, :, i_rat].max()])
-    plt.xticks([])
-    plt.yticks([])
-tick_slice = slice(1, None, 2)
-for tick_fnc in (plt.xticks, plt.yticks):
-    tick_fnc(range(len(ratio_levels))[tick_slice],
-             [int(e) for e in ratio_levels[tick_slice]])
-plt.xlabel('LF ratio')
-plt.xlabel('HF ratio')
-# Plot the scale of the average
-plt.subplot(3, 3, len(fnames) + 1)
-plt.title('Average')
-plt.imshow(max_abs_vals[:, :, -1],
-           vmin=0)
-cb = plt.colorbar(format='%.0f')
-cb.set_ticks([0, max_abs_vals[:, :, -1].max()])
-plt.xticks([])
-plt.yticks([])
-plt.tight_layout()
-plt.savefig(f'{plot_dir}te/tile_by_param_colorbar_zscore.png')
+plt.savefig(f'{plot_dir}te/tile_by_param_colorbar_{direc}.png')
 
 
 ##################################
@@ -1154,10 +1083,14 @@ lf_ratio = 2.0
 hf_ratio = 3.0
 i_rat = 4
 fn = fnames[i_rat]
+lf_freqs = [8, 9, 10]  # Which LF frequencies to zoom in on
+hf_freqs = [50]  # Which HF frequencies to zoom in on
+i_perm = 0  # 0: Empirical data; >0: Permutations
 
 ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
-date = '2021-04-26'
+date = '2021-04-26'  # Randomly shifted
+# date = '2021-05-13'  # Randomly shuffled A/B
 pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
 diff_type = 'PD(AB)-PD(BA)'
@@ -1175,10 +1108,11 @@ saved_data = np.load(f"{data_dir}te/{fn}", allow_pickle=True)
 mi_params = saved_data.get('mi_params').item()
 te = saved_data.get('te')[0][diff_type]
 
+plt.figure(figsize=(10, 6))
 for i_cond, (cond, te_cond) in enumerate(te.items()):
-    plt.subplot(1, 3, i_cond + 1)
+    plt.subplot(2, 3, i_cond + 1)
     plt.title(cond)
-    te_cond = np.squeeze(te_cond[0, :, :])
+    te_cond = np.squeeze(te_cond[i_perm, :, :])
 
     # Plot the average over all the rats
     max_level = np.max(np.abs(te_cond))
@@ -1189,9 +1123,26 @@ for i_cond, (cond, te_cond) in enumerate(te.items()):
                aspect='auto',
                vmin=-max_level, vmax=max_level,
                cmap=plt.cm.RdBu_r)
-    plt.yticks(range(len(mi_params['f_car']))[::4],
-               mi_params['f_car'][::4])
-    plt.xticks(range(len(mi_params['f_mod'])), mi_params['f_mod'])
+    ytick_spacing = 4
+    xtick_spacing = 2
+    plt.yticks(range(len(mi_params['f_car']))[::ytick_spacing],
+               mi_params['f_car'][::ytick_spacing])
+    plt.xticks(range(len(mi_params['f_mod']))[::xtick_spacing],
+               mi_params['f_mod'][::xtick_spacing])
+    plt.xlabel('LF freq (Hz)')
+    plt.ylabel('HF freq (Hz)')
+    plt.gca().add_patch(  # Draw a box around the frequencies we're focusing on
+            Rectangle([mi_params['f_mod'].tolist().index(lf_freqs[0]) - 0.5,
+                       mi_params['f_car'].tolist().index(hf_freqs[0]) - 0.5],
+                      width=len(lf_freqs),
+                      height=len(hf_freqs),
+                      fill=False,
+                      edgecolor='k',
+                      linestyle='--',
+                      linewidth=2))
+    plt.colorbar(ticks=[0, np.max(np.abs(te_cond))],
+                 format='%2.0e',
+                 orientation='vertical')
 plt.tight_layout()
 
 # Choose the cells of the analysis to look at
@@ -1203,7 +1154,7 @@ mi_params['f_mod'] = mi_params['f_mod'][i_fm]
 mi_params['f_car'] = mi_params['f_car'][i_fc]
 mi_params['f_mod_bw'] = mi_params['f_mod'] / lf_ratio
 mi_params['f_car_bw'] = mi_params['f_car'] / hf_ratio
-mi_params['n_perm_shift'] = 0
+mi_params['n_perm_shift'] = 1
 mi_params['return_phase_bins'] = True
 
 d = loadmat(data_dir + fnames[i_rat])
@@ -1223,8 +1174,91 @@ mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
                                                   **mi_params)
 
 # mi dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
-plt.clf()
-for i_freq in range(3):
-    plt.subplot(3, 1, i_freq + 1)
-    x = np.squeeze(mi[0, i_freq, 0, 0, :2, :])
-    plt.plot(x.T)
+labels = ('a', 'b', 'diff')
+colors = ['firebrick', 'grey', 'royalblue']
+for i_direc in range(2):  # a, b, diff
+    plt.subplot(2, 3, i_direc + 4)
+    for i_freq in range(3):
+        x = np.squeeze(mi[i_perm, i_freq, 0, 0, i_direc, :])
+        plt.plot(x,
+                 label=mi_params['f_mod'][i_freq],
+                 color=colors[i_freq])
+    plt.xticks([])
+    plt.xlabel('Phase bins')
+    plt.ylabel('TE (bits)')
+    if i_direc == 0:
+        plt.legend()
+plt.tight_layout()
+
+plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perm{i_perm}.png')
+
+# Plot the TE by phase-bin for a few permutations
+n_perms = 5
+mi_params['n_perm_shift'] = n_perms
+mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                  fs=fs,
+                                                  lag=[lag],
+                                                  **mi_params)
+plt.figure()
+for i_perm in range(n_perms):
+    for i_direc in range(2):
+        plt.subplot(n_perms, 2, i_direc + 1 + (i_perm * 2))
+        for i_freq in range(3):
+            x = np.squeeze(mi[i_perm, i_freq, 0, 0, i_direc, :])
+            plt.plot(x,
+                     label=mi_params['f_mod'][i_freq],
+                     color=colors[i_freq])
+        plt.xticks([])
+        plt.xlabel('Phase bins')
+        plt.ylabel('TE (bits)')
+        # if i_direc == 0 and i_perm == 0:
+        #     plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perms.png')
+
+
+# Show the randomization distributions for the adjacent flipped pixels
+lf_ratio = 2.0
+hf_ratio = 3.0
+i_rat = 4
+fn = fnames[i_rat]
+lf_freqs = [8, 10]  # Which LF frequencies to zoom in on
+hf_freqs = [50]  # Which HF frequencies to zoom in on
+
+ratio_levels = np.arange(2.0, 6.01, 1.0)
+files = os.listdir(data_dir + 'te/')
+# date = '2021-04-26'  # Randomly shifted
+date = '2021-05-13'  # Randomly shuffled A/B
+pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
+pattern = f'te_{date}-[0-9]+_{pattern}'
+diff_type = 'PD(AB)-PD(BA)'
+
+pat = pattern.format(i_rat=i_rat,
+                     lf_ratio=lf_ratio,
+                     hf_ratio=hf_ratio)
+match_inx = [i for i, f in enumerate(files) if re.match(pat, f)]
+if len(match_inx) > 1:
+    raise(Exception('More than one matching file found'))
+else:
+    match_inx = match_inx[0]
+fn = files[match_inx]
+saved_data = np.load(f"{data_dir}te/{fn}", allow_pickle=True)
+mi_params = saved_data.get('mi_params').item()
+te = saved_data.get('te')[0][diff_type]
+for direc in directions:
+    te[direc] = stats.zscore(te[direc], axis=None)
+
+plt.figure()
+i_plot = 1
+for direc in directions:
+    for i_freq in range(len(lf_freqs)):
+        lf_inx = mi_params['f_mod'].tolist().index(lf_freqs[i_freq])
+        hf_inx = mi_params['f_car'].tolist().index(hf_freqs[0])
+        x = te[direc][:, lf_inx, hf_inx, 0]
+        plt.subplot(3, 2, i_plot)
+        plt.title(f"{direc}, {lf_freqs[i_freq]} Hz")
+        plt.hist(x[1:], 20)
+        plt.axvline(x=x[0], color='r')
+        i_plot += 1
+plt.tight_layout()
+plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_z-hist-shuffledAB.png')
