@@ -65,6 +65,7 @@ mi_params = dict(f_mod=f_mod,
                  diff_method='both',
                  calc_type=2,
                  method='sine psd',
+                 return_phase_bins=True,
                  verbose=True)
 
 
