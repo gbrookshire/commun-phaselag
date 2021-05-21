@@ -56,7 +56,6 @@ def coherence(s_a, s_b, fs, nfft, n_overlap=None):
     return coh_data, freq
 
 
-
 def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
     Cross-frequency coupling between two signals.
@@ -64,10 +63,10 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
 
     Parameters
     ----------
-    s_a, s_b : ndarray (time,) or (time, trial)
+    s_a, s_b : ndarray (time, ) or (time, trial)
         Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
         Phase is extracted from s_a. Amplitude is extracted from s_b.
-    fs : int,float
+    fs : int, float
         Sampling rate
     nfft : int
         Size of the FFT window
@@ -90,7 +89,7 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     # Split the data into segments of length nfft
     x_split = _buffer(s_a, nfft, int(nfft / 2))
     amp_split = _buffer(amp, nfft, int(nfft / 2))
-    
+
     # Apply hanning taper to each segment
     taper = np.hanning(nfft)
     x_taper = _match_dims(taper, x_split) * x_split
@@ -105,15 +104,15 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     for inx in range(1, len(new_shape) - 1):
         new_shape[inx] = 1
     x_fft = np.reshape(x_fft, new_shape)
- 
+
     # Cross spectra
     xspec = x_fft * np.conj(amp_fft)
 
     # Cross-frequency coupling
-    num = np.abs(np.nansum(xspec, axis=-1)) # Combine over segments
+    num = np.abs(np.nansum(xspec, axis=-1))  # Combine over segments
     denom_a = np.nansum(np.abs(x_fft) ** 2, axis=-1)
     denom_b = np.nansum(np.abs(amp_fft) ** 2, axis=-1)
-    denom  = np.sqrt(denom_a * denom_b)
+    denom = np.sqrt(denom_a * denom_b)
     cfc_data = num / denom
 
     # Only keep the meaningful frequencies
@@ -123,13 +122,13 @@ def cfc_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     # Compute the modulation frequencies
     f_mod = np.arange(nfft - 1) * fs / nfft
     f_mod = f_mod[:n_keep_freqs]
-     
+
     return cfc_data, f_mod
 
 
 def cfc_phasediff_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
     """
-    Compute CFC based on the low-frequency phase-difference between two signals.
+    Compute CFC based on the low-frequency phase-difference between two sigs.
     Compute CFC as in Tort et al (2010, J Neurophysiol).
 
     ------- This approach doesn't work --------
@@ -145,12 +144,12 @@ def cfc_phasediff_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
 
     Parameters
     ----------
-    s_a, s_b : ndarray (time,) or (time, trial)
+    s_a, s_b : ndarray (time, ) or (time, trial)
         Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
-    fs : int,float
+    fs : int, float
         Sampling rate
     nfft : int
-        Size of the FFT window 
+        Size of the FFT window
     n_overlap : int
         Number of samples of overlap in the FFT windows
     f_car : list or ndarray
@@ -206,12 +205,13 @@ def cfc_phasediff_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
         new_shape[inx] = 1
     x_phasediff_fft = np.reshape(x_phasediff_fft, new_shape)
 
-    # ##### TESTING
-    # # Make amp_fft follow x_phasediff_fft as a test
+    #  ##### TESTING
+    #  # Make amp_fft follow x_phasediff_fft as a test
     # freq_car_to_change = 20
     # freq_mod_to_change = slice(40, 60)
     # amp_fft['a'][freq_mod_to_change, freq_to_change, :, :] = \
-    #                                 x_phasediff_fft[freq_mod_to_change, 0, :, :]
+    #                                 x_phasediff_fft[freq_mod_to_change, 0,
+    #                                                 :, :]
 
     for sig in 'ab':
         # Get the cross-spec b/w the phase-diff signal and the phase of the
@@ -219,50 +219,28 @@ def cfc_phasediff_xspect(s_a, s_b, fs, nfft, n_overlap, f_car, n_cycles=5):
         xspec[sig] = x_phasediff_fft * np.conj(amp_fft[sig])
 
         # Cross-frequency coupling
-        num = np.abs(np.nansum(xspec[sig], axis=-1)) # Combine over segments
+        num = np.abs(np.nansum(xspec[sig], axis=-1))  # Combine over segments
         denom_a = np.nansum(np.abs(x_phasediff_fft) ** 2, axis=-1)
         denom_b = np.nansum(np.abs(amp_fft[sig]) ** 2, axis=-1)
-        denom  = np.sqrt(denom_a * denom_b)
+        denom = np.sqrt(denom_a * denom_b)
         cfc_data[sig] = num / denom
 
         # Only keep the meaningful frequencies
         n_keep_freqs = int(np.floor(nfft / 2))
-        cfc_data[sig] = cfc_data[sig][:n_keep_freqs, ...] #TODO check with 3D data
+        cfc_data[sig] = cfc_data[sig][:n_keep_freqs, ...]  # TODO check with 3D
 
     # Compute the modulation frequencies
     f_mod = np.arange(nfft - 1) * fs / nfft
     f_mod = f_mod[:n_keep_freqs]
-     
+
     return cfc_data, f_mod
 
 
 def _match_dims(arr1, arr2):
-    """ Reshape arr1 so it has the same #dims as arr1
+    """ Reshape arr1 so it has the same  #dims as arr1
     """
     arr1 = np.reshape(arr1, [-1] + ([1] * (arr2.ndim - 1)))
     return arr1
-
-    
-def cfc_within(x, fs, f_carrier, nfft, n_cycles):
-    """
-    Cross-frequency coupling within one signal
-
-    Parameters
-    ----------
-    x : Vector of data
-    f_carrier : Vector of carrier frequencies to look for modulation
-    nfft : size of the FFT window (FIXME -- window for what?)
-    n_cycles : How many cycles to include in the wavelet analysis (vec or int)
-    fs : Sampling rate of the signal
-
-    Returns
-    -------
-    cfc_data : Coherence values
-    mod_freq : The frequencies of modulation for coherence
-    """
-    #FIXME args are out of order
-    cfc_data, f_mod = cfc_two_signals(x, x, fs, f_carrier, nfft, n_cycles) 
-    return cfc_data, f_mod
 
 
 def _wavelet(freq, n_cycles, fs):
@@ -294,7 +272,7 @@ def _wavelet_tfr(x, freqs, n_cycles, fs):
 
     Parameters
     ----------
-    x : ndarray (time,) or (time, channel) or (time, trial)
+    x : ndarray (time, ) or (time, channel) or (time, trial)
         Data. If multidimensional, time must be the first dimension
     freqs : sequence of numbers
         Frequency of the wavelet (in Hz)
@@ -311,7 +289,7 @@ def _wavelet_tfr(x, freqs, n_cycles, fs):
 
     # Set up the wavelets
     n_cycles = n_cycles * np.ones(len(freqs))
-    wavelets = [_wavelet(f, n, fs) for f,n in zip(freqs, n_cycles)]
+    wavelets = [_wavelet(f, n, fs) for f, n in zip(freqs, n_cycles)]
 
     # Compute power timecourses of data with multiple channels
     if x.ndim == 1:
@@ -349,17 +327,17 @@ def _buffer(x, n, p):
 
     Adapted from https://stackoverflow.com/a/57491913
     '''
-    start_points = range(0, x.shape[0] - n + 1, n - p) # Where each seg starts
-    #assert len(x.shape) <= 2, 'Data must be 1- or 2-dimensional'
+    start_points = range(0, x.shape[0] - n + 1, n - p)  # Where each seg starts
+    # assert len(x.shape) <= 2, 'Data must be 1- or 2-dimensional'
     if len(x.shape) == 1:
         result_shape = [n, len(start_points)]
     elif len(x.shape) == 2:
         result_shape = [n, x.shape[1], len(start_points)]
     elif len(x.shape) == 3:
         result_shape = [n, x.shape[1], x.shape[2], len(start_points)]
-    result = np.full(result_shape, np.nan) # initialize data matrix
-    for i_seg, start_inx in enumerate(start_points):
-        result[..., i_seg] = x[start_inx:(start_inx + n), ...] #fill in by column
+    result = np.full(result_shape, np.nan)  # initialize data matrix
+    for i_seg, start_inx in enumerate(start_points):  # fill in by column
+        result[..., i_seg] = x[start_inx:(start_inx + n), ...]
     return result
 
 
@@ -374,25 +352,26 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
     Get amplitude of x_{f_A}(t) using the Hilbert transform: A_{f_A}(t).
 
-    Bin the phases of Phi_{f_p}(t), and get the mean of A_{f_A}(t) for each bin.
+    Bin the phases of Phi_{f_p}(t), and get the mean of A_{f_A}(t) for each bin
 
     Normalize the mean amps by dividing each bin value by the sum over bins.
 
     Get phase-amplitude coupling by computing the Kullback-Leibler distance
     D_{KL} between the mean binned amplitudes and a uniform distribution.
 
-    Modulation Index (MI) := D_{KL}(normed binned amps, uniform dist) / log(n bins)
+    Modulation Index
+        MI := D_{KL}(normed binned amps, uniform dist) / log(n bins)
 
 
     Parameters
     ----------
-    s_a : ndarray (time,) or (time, trial)
+    s_a : ndarray (time, ) or (time, trial)
         Signal array with the modualting signal. If 2D, first dim must be time,
         and 2nd dim is trial.
-    s_b : ndarray (time,) or (time, trial)
+    s_b : ndarray (time, ) or (time, trial)
         Signal array with the amplitude variations. If 2D, first dim must be
         time, and 2nd dim is trial.
-    fs : int,float
+    fs : int, float
         Sampling rate
     f_mod : list of lists (n, 2)
         Array with a row of cutoff frequencies for each bandpass filter for
@@ -410,7 +389,7 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     mi : ndarray
         (Modulation frequecy, Carrier frequency)
     """
-    #TODO test this with multichannel inputs
+    # TODO test this with multichannel inputs
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
 
@@ -420,20 +399,20 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     # s_b_amp shape: (time, carrier freq)
     if s_b.ndim == 2:
         s_b_amp = np.concatenate(
-                    [s_b_amp[:,:,k] for k in range(s_b_amp.shape[2])],
+                    [s_b_amp[:, :, k] for k in range(s_b_amp.shape[2])],
                     axis=0)
 
     mi = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
-    for i_fm,fm in enumerate(f_mod):
+    for i_fm, fm in enumerate(f_mod):
         # Compute LF phase
         s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
-        s_a_phase = np.digitize(s_a_phase, phase_bins) - 1 # Binned
+        s_a_phase = np.digitize(s_a_phase, phase_bins) - 1  # Binned
         # Append trials over time if data includes multiple trials
         if s_a_phase.ndim == 2:
             s_a_phase = np.ravel(s_a_phase, 'F')
         # Compute CFC for each carrier freq using KL divergence
-        for i_fc,fc in enumerate(f_car):
+        for i_fc, fc in enumerate(f_car):
             # Average HF amplitude per LF phase bin
             amplitude_dist = np.ones(n_bins)  # default is 1 to avoid log(0)
             for b in np.unique(s_a_phase):
@@ -449,14 +428,14 @@ def cfc_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
 
 def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     """
-    Compute CFC based on the low-frequency phase-difference between two signals.
+    Compute CFC based on the low-frequency phase-difference between two signals
     Compute CFC as in Tort et al (2010, J Neurophysiol).
 
     Parameters
     ----------
-    s_a, s_b : ndarray (time,) or (time, trial)
+    s_a, s_b : ndarray (time, ) or (time, trial)
         Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
-    fs : int,float
+    fs : int, float
         Sampling rate
     f_mod : list of lists (n, 2)
         Array with a row of cutoff frequencies for each bandpass filter for
@@ -487,13 +466,14 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
     for sig in 'ab':
         if amp[sig].ndim == 3:
             amp[sig] = np.concatenate(
-                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            [amp[sig][:, :, k]
+                             for k in range(amp[sig].shape[2])],
                             axis=0)
 
     mi = {}
     mi['a'] = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
     mi['b'] = mi['a'].copy()
-    for i_fm,fm in enumerate(f_mod):
+    for i_fm, fm in enumerate(f_mod):
         # Compute LF phase difference
         s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
@@ -501,19 +481,20 @@ def cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car, n_bins=18, n_cycles=5):
         s_b_phase = np.angle(hilbert(s_b_filt, axis=0))
         # Append trials over time if data includes multiple trials
         if s_a_phase.ndim == 2:
-            s_a_phase = np.ravel(s_a_phase , 'F')
+            s_a_phase = np.ravel(s_a_phase, 'F')
         if s_b_phase.ndim == 2:
-            s_b_phase = np.ravel(s_b_phase , 'F')
+            s_b_phase = np.ravel(s_b_phase, 'F')
         phase_diff = s_a_phase - s_b_phase
-        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
-        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
-        for i_fc,fc in enumerate(f_car):
+        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi  # wrap to pi
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1  # Binned
+        for i_fc, fc in enumerate(f_car):
             for sig in ('a', 'b'):
                 # Average HF amplitude per LF phase bin
-                amplitude_dist = np.ones(n_bins) # default is 1 to avoid log(0)
+                amplitude_dist = np.ones(n_bins)  # default 1 to avoid log(0)
                 for b in np.unique(phase_diff):
-                    amplitude_dist[b] = np.mean(amp[sig][phase_diff == b, i_fc])
-                # Kullback-Leibler divergence of the amp distribution vs uniform
+                    amplitude_dist[b] = np.mean(amp[sig][phase_diff == b,
+                                                         i_fc])
+                # Kullback-Leibler divergence of amp distribution vs uniform
                 amplitude_dist /= np.sum(amplitude_dist)
                 d_kl = np.sum(amplitude_dist * np.log(amplitude_dist * n_bins))
                 mi_mc = d_kl / np.log(n_bins)
@@ -530,12 +511,12 @@ def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
 
     Parameters
     ----------
-    s_a : ndarray (time,) or (time, trial)
+    s_a : ndarray (time, ) or (time, trial)
         Signal array with the modualting signal. If 2D, first dim must be time,
         and 2nd dim is trial.
-    s_b : ndarray (time,) or (time, trial)
+    s_b : ndarray (time, ) or (time, trial)
         Signal array with the amplitude variations. Structure like s_a.
-    fs : int,float
+    fs : int, float
         Sampling rate
     f_mod : list of lists (n, 2)
         Array with a row of cutoff frequencies for each bandpass filter for
@@ -553,7 +534,7 @@ def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
     sin_r : ndarray
         Pearson correlation of sine-wave fits.
     """
-    #TODO test this with multichannel inputs
+    # TODO test this with multichannel inputs
 
     # Get high frequency amplitude using a wavelet transform
     s_b_amp = _wavelet_tfr(s_b, f_car, n_cycles, fs)
@@ -561,12 +542,12 @@ def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
     # s_b_amp shape: (time, carrier freq)
     if s_b.ndim == 2:
         s_b_amp = np.concatenate(
-                    [s_b_amp[:,:,k] for k in range(s_b_amp.shape[2])],
+                    [s_b_amp[:, :, k] for k in range(s_b_amp.shape[2])],
                     axis=0)
 
     sin_amp = np.full([f_car.shape[0], f_mod.shape[0]], np.nan)
     sin_r = sin_amp.copy()
-    for i_fm,fm in enumerate(f_mod):
+    for i_fm, fm in enumerate(f_mod):
         # Compute LF phase
         s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
@@ -575,7 +556,7 @@ def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
             s_a_phase = np.ravel(s_a_phase, 'F')
         # Compute CFC for each carrier freq by checking for sinusoidal
         # modulation of HF power along with LF phase
-        for i_fc,fc in enumerate(f_car):
+        for i_fc, fc in enumerate(f_car):
             p = sine_ols(s_a_phase, np.squeeze(s_b_amp[:, i_fc]))
             # Save the amplitude of the sine fit
             sin_amp[i_fc, i_fm] = p[0]
@@ -589,7 +570,7 @@ def cfc_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
 
 def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
     """
-    Compute CFC based on the low-frequency phase-difference between two signals.
+    Compute CFC based on the low-frequency phase-difference between two signals
 
     Compute CFC similar to Tort et al (2010, J Neurophysiol), but fitting the
     gamma amplitudes at each phase value to a sine-wave instead of comparing
@@ -597,9 +578,9 @@ def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
 
     Parameters
     ----------
-    s_a, s_b : ndarray (time,) or (time, trial)
+    s_a, s_b : ndarray (time, ) or (time, trial)
         Signal arrays. If 2D, first dim must be time, and 2nd dim is trial.
-    fs : int,float
+    fs : int, float
         Sampling rate
     f_mod : list of lists (n, 2)
         Array with a row of cutoff frequencies for each bandpass filter for
@@ -619,7 +600,7 @@ def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
         amplitude and goodness-of-fit of the sine-wave fits.
 
     """
-    #TODO test this with multichannel inputs
+    # TODO test this with multichannel inputs
 
     # Get high frequency amplitude using a wavelet transform
     # Get high frequency amplitude using a wavelet transform
@@ -631,7 +612,8 @@ def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
     for sig in 'ab':
         if amp[sig].ndim == 3:
             amp[sig] = np.concatenate(
-                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            [amp[sig][:, :, k]
+                             for k in range(amp[sig].shape[2])],
                             axis=0)
 
     # Initialize data structures to hold CFC values
@@ -643,7 +625,7 @@ def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
             mi[sig][out] = init_mat.copy()
 
     # Compute the CFC
-    for i_fm,fm in enumerate(f_mod):
+    for i_fm, fm in enumerate(f_mod):
         # Compute LF phase difference
         s_a_filt = bp_filter(s_a.T, fm[0], fm[1], fs, 2).T
         s_a_phase = np.angle(hilbert(s_a_filt, axis=0))
@@ -651,14 +633,14 @@ def cfc_phasediff_sine(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
         s_b_phase = np.angle(hilbert(s_b_filt, axis=0))
         # Append trials over time if data includes multiple trials
         if s_a_phase.ndim == 2:
-            s_a_phase = np.ravel(s_a_phase , 'F')
+            s_a_phase = np.ravel(s_a_phase, 'F')
         if s_b_phase.ndim == 2:
-            s_b_phase = np.ravel(s_b_phase , 'F')
+            s_b_phase = np.ravel(s_b_phase, 'F')
         phase_diff = s_a_phase - s_b_phase
-        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
+        phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi  # wrap to pi
         # Compute CFC for each carrier freq by checking for sinusoidal
         # modulation of HF power along with LF phase
-        for i_fc,fc in enumerate(f_car):
+        for i_fc, fc in enumerate(f_car):
             for sig in ('a', 'b'):
                 amp_sig = np.squeeze(amp[sig][:, i_fc])
                 p = sine_ols(phase_diff, amp_sig)
@@ -682,10 +664,10 @@ def sine_ols(s_phase, s_amp):
     Return a list of Amplitude, Phase, and Offset.
     """
     a = np.stack([np.ones(s_phase.shape),
-                np.sin(s_phase),
-                np.cos(s_phase)])
+                  np.sin(s_phase),
+                  np.cos(s_phase)])
     b = np.squeeze(s_amp)
-    x,_,_,_ = np.linalg.lstsq(a.T, b, rcond=None)
+    x, _, _, _ = np.linalg.lstsq(a.T, b, rcond=None)
     z = np.complex(*x[1:])
     # Amp, phase, offset
     p = [np.abs(z), np.angle(z), x[0]]
@@ -701,48 +683,48 @@ def sine_ols(s_phase, s_amp):
 # plt.colorbar()
 
 # plt.clf()
-# plt.plot(s_a_phase, s_b_amp[:,i_fc], 'o', alpha=0.2)
+# plt.plot(s_a_phase, s_b_amp[:, i_fc], 'o', alpha=0.2)
 # x_phase = np.linspace(-np.pi, np.pi, 100)
 # plt.plot(x_phase, sine_helper(x_phase, popt[0], popt[1]))
 
-# # Two ways to fit a sine wave
-# # First simulate a signal
+#  # Two ways to fit a sine wave
+#  # First simulate a signal
 # k = 1000
 # sim_amp = np.random.uniform(0.5, 2.0)
 # sim_offset = np.random.uniform(0.0, 10.0)
 # sim_phase = np.random.uniform(-np.pi, np.pi)
-# sin_fnc = lambda a,p,x: a * np.sin(x + p)
+# sin_fnc = lambda a, p, x: a * np.sin(x + p)
 # x = np.random.uniform(-np.pi, np.pi, k)
 # y = sine_helper(x, sim_amp, sim_phase, sim_offset)
 # y = y + np.random.normal(size=y.shape)
 # plt.clf()
 # plt.plot(x, y, 'o', alpha=0.2)
-# # 1. Using optimize.curve_fit to estimate the amp and phase of a sine
+#  # 1. Using optimize.curve_fit to estimate the amp and phase of a sine
 # def sine_curve_fit(s_phase, s_amp):
 #     popt, _ = curve_fit(sine_helper,
 #                         s_phase,
 #                         np.squeeze(s_amp))
 #     return popt
 # p_curve_fit = sine_curve_fit(x, y)
-# phase_x = np.arange(-np.pi, np.pi, 1/fs) 
+# phase_x = np.arange(-np.pi, np.pi, 1/fs)
 # plt.plot(phase_x, sine_helper(phase_x, *p_curve_fit),
 #          linestyle='--')
-# # 2. Using OLS
-# # Fit a sine and a cosine, then calculate amp and phase
+#  # 2. Using OLS
+#  # Fit a sine and a cosine, then calculate amp and phase
 # def sine_ols(s_phase, s_amp):
 #     a = np.stack([np.ones(s_phase.shape),
 #                   np.sin(s_phase),
 #                   np.cos(s_phase)])
 #     b = np.squeeze(s_amp)
-#     x,_,_,_ = np.linalg.lstsq(a.T, b, rcond=None)
+#     x, _, _, _ = np.linalg.lstsq(a.T, b, rcond=None)
 #     z = np.complex(*x[1:])
-#     p = [np.abs(z), np.angle(z), x[0]] # Amp, phase, offset
+#     p = [np.abs(z), np.angle(z), x[0]]  # Amp, phase, offset
 #     return p
 # p_ols = sine_ols(x, y)
 # plt.plot(phase_x, sine_helper(phase_x, *p_ols),
 #          linestyle=':')
-# # Compare the timing
-# # curve_fit is about 5 times slower
+#  # Compare the timing
+#  # curve_fit is about 5 times slower
 # %timeit p_curve_fit = sine_curve_fit(x, y)
 # %timeit p_ols = sine_ols(x, y)
 
@@ -778,10 +760,10 @@ def mod_index(x, method):
         x[x < 0] = x[x > 0].min()
         # Make sure each LF/HF pair sums to 1 so KL-divergence works
         x_sums = np.sum(x, axis=-1)
-        x_sums = np.swapaxes(np.swapaxes(np.tile(x_sums, # Make dims the same
-                                                [n_bins, 1, 1]),
-                                        0, 1),
-                            1, 2)
+        x_sums = np.swapaxes(np.swapaxes(np.tile(x_sums,  # Make dims the same
+                                                 [n_bins, 1, 1]),
+                                         0, 1),
+                             1, 2)
         x /= x_sums
         d_kl = np.sum(x * np.log(x * n_bins), 2)
         mi_comod = d_kl / np.log(n_bins)
@@ -790,7 +772,7 @@ def mod_index(x, method):
         # PSD of a sine wave fit to the MI as a function of phase-difference
         # Units: bits^2 / Hz
         sine_psd = (np.abs(np.fft.fft(x)) ** 2) / n_bins
-        mi_comod = sine_psd[..., 1] # Take the freq matching the whole signal
+        mi_comod = sine_psd[..., 1]  # Take the freq matching the whole signal
 
     elif method == 'sine amp':
         # Amplitude of a sine wave fit, normalized by sequence length
@@ -809,9 +791,9 @@ def mod_index(x, method):
         Cons
         - Noisier signals with low DC can have bigger mod inx
         """
-        y = np.abs(np.fft.fft(x)) # Amp spect
-        y = y[..., :(n_bins // 2)] # Only take positive frequencies
-        y[..., 0] /= 2 # Account for the fact that non-DC coefs are doubled in DFTs 
+        y = np.abs(np.fft.fft(x))  # Amp spect
+        y = y[..., :(n_bins // 2)]  # Only take positive frequencies
+        y[..., 0] /= 2  # non-DC coefs are doubled in DFTs
         # Proportion of the spectrum accounted for by this freq
         y = y / np.reshape(np.sum(y, axis=-1),
                            list(y.shape[:2]) + [1])
@@ -825,7 +807,7 @@ def mod_index(x, method):
         for i_fm in range(x.shape[0]):
             for i_fc in range(x.shape[1]):
                 y = x[i_fm, i_fc, :]
-                y = y - np.mean(y) # Remove the mean to focus on sine-wave fits
+                y = y - np.mean(y)  # Remove mean to focus on sine-wave fits
                 model = sm.OLS(y, x_arr)
                 results = model.fit()
                 rsq = results.rsquared
@@ -909,7 +891,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     Parameters
     ----------
 
-    s_a, s_b : np.ndarray (time,) or (time, trial)
+    s_a, s_b : np.ndarray (time, ) or (time, trial)
         The two signals
     fs : scalar (int, float)
         The sampling rate of the signals
@@ -1107,8 +1089,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                 if i_perm_sig > 0:
                     for i_epoch in range(s_a.shape[1]):
                         if np.random.choice([True, False]):
-                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :, i_epoch])
-                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :, i_epoch])
+                            tmp_a = copy.deepcopy(sig_2d_orig['a'][:, :,
+                                                                   i_epoch])
+                            tmp_b = copy.deepcopy(sig_2d_orig['b'][:, :,
+                                                                   i_epoch])
                             sig_2d_orig['a'][:, :, i_epoch] = tmp_b
                             sig_2d_orig['b'][:, :, i_epoch] = tmp_a
 
@@ -1242,9 +1226,10 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             mi_diff_shape[4] += 1  # One extra 'column' for the directions
             mi_diff = np.full(mi_diff_shape, np.nan)
             mi_diff[:, :, :, :, :2, :] = mi
-            mi_diff[:, :, :, :, 2, :] = mi[:, :, :, :, 0, :] - mi[:, :, :, :, 1, :]
+            mi_diff[:, :, :, :, 2, :] = \
+                mi[:, :, :, :, 0, :] - mi[:, :, :, :, 1, :]
             mi = mi_diff
-            # Compute a phase-dependence index for each combination of LF and HF
+            # Compute phase-dependence index for each combination of LF and HF
             mi_comod = mod_index(mi, method)
             # Get the difference between directions
             mi_comod = {'a': mi_comod[..., 0],
@@ -1330,7 +1315,7 @@ def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
         The signals
     cmi_lag : float, seq of floats
         The lags to test between the two variables. Should be positive numbers.
-        
+
     """
 
     s = {'a': s_a, 'b': s_b}
@@ -1338,16 +1323,14 @@ def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
     # Initialize mutual information array
     # Dims: LF freq, HF freq, CMI lag, direction
     mi = np.full([len(f_mod), len(f_car), len(cmi_lag), 2], np.nan)
-    # Initialize array to hold the number of observations in each bin
-    counts = np.full([len(f_mod), n_bins], np.nan)
 
     for i_fm, fm in enumerate(f_mod):
         print(fm)
         # Compute the LF phase-difference of each signal
         filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
-                    for sig in 'ab'}
+                for sig in 'ab'}
         phase = {sig: np.angle(hilbert(filt[sig], axis=0))
-                    for sig in 'ab'}
+                 for sig in 'ab'}
         phase_diff = phase['a'] - phase['b']
         phase_diff = wrap_to_pi(phase_diff)
         # Make 2D signal out of the phase difference for use with GCMI
@@ -1359,15 +1342,19 @@ def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
                                    fc - (f_car_bw / 2),
                                    fc + (f_car_bw / 2),
                                    fs, 2).T
-                        for sig in 'ab'}
+                    for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
             # This makes mutual information more informative
             h = {sig: hilbert(filt[sig]) for sig in 'ab'}
             sig_2d = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
-                        for sig in 'ab'}
+                      for sig in 'ab'}
 
             for i_lag, lag in enumerate(list(cmi_lag)):
-                L = lambda x: np.roll(x, lag, axis=1) # Lag function
+
+                def L(x):
+                    """ Lag function """
+                    return np.roll(x, lag, axis=1)
+
                 # Compute I(LA;B|PhaseDiff) and I(A;LB|PhaseDiff)
                 mi_a = gcmi.gccmi_ccc(L(sig_2d['a']),
                                       sig_2d['b'],
@@ -1377,7 +1364,7 @@ def cfc_phaselag_cmi_phase(s_a, s_b, fs, f_mod, f_car, cmi_lag, f_car_bw=5):
                                       phase_diff_2d)
                 mi[i_fm, i_fc, i_lag, :] = (mi_a, mi_b)
 
-    return mi, counts
+    return mi
 
 
 def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
@@ -1398,12 +1385,12 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
         print(fm)
         # Compute the LF phase-difference of each signal
         filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
-                    for sig in 'ab'}
+                for sig in 'ab'}
         phase = {sig: np.angle(hilbert(filt[sig], axis=0))
-                    for sig in 'ab'}
+                 for sig in 'ab'}
         phase_diff = phase['a'] - phase['b']
         phase_diff = wrap_to_pi(phase_diff)
-        phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+        phase_diff = np.digitize(phase_diff, phase_bins) - 1  # Binned
         # Append trials over time if data includes multiple trials
         phase_diff = np.ravel(phase_diff, 'F')
 
@@ -1413,12 +1400,12 @@ def cfc_phaselag_mutualinfo(s_a, s_b, fs, f_mod, f_car,
                                    fc - (f_car_bw / 2),
                                    fc + (f_car_bw / 2),
                                    fs, 2).T
-                        for sig in 'ab'}
+                    for sig in 'ab'}
             # Make a 2D version of the signal with its Hilbert transform
             # This makes mutual information more informative
             h = {sig: hilbert(filt[sig]) for sig in 'ab'}
             sig_2d = {sig: np.stack([np.real(h[sig]), np.imag(h[sig])])
-                        for sig in 'ab'}
+                      for sig in 'ab'}
 
             # Compute MI for each phase bin
             for phase_bin in np.unique(phase_diff):
@@ -1494,7 +1481,6 @@ def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
         results = fit_regression(x, amp_sig)
         return results
 
-
     # Get high frequency amplitude using a wavelet transform
     amp = {}
     amp['a'] = _wavelet_tfr(s_a, f_car, n_cycles, fs)
@@ -1504,7 +1490,8 @@ def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
     for sig in 'ab':
         if amp[sig].ndim == 3:
             amp[sig] = np.concatenate(
-                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            [amp[sig][:, :, k]
+                             for k in range(amp[sig].shape[2])],
                             axis=0)
 
     # Set up an object for the results
@@ -1518,20 +1505,20 @@ def cfc_modelcomp(s_a, s_b, fs, f_mod, f_car, n_cycles=5):
         print(fm)
         # Compute the LF phase of each signal
         filt = {sig: bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
-                    for sig in 'ab'}
+                for sig in 'ab'}
         phase = {sig: np.angle(hilbert(filt[sig], axis=0))
-                    for sig in 'ab'}
+                 for sig in 'ab'}
         # Append trials over time if data includes multiple trials
         for sig in 'ab':
             phase[sig] = np.ravel(phase[sig], 'F')
 
-        results_fm = [] # Results for this fm
+        results_fm = []  # Results for this fm
         # Run the loop for each amplitude frequency
-        for i_fc,fc in enumerate(f_car):
-            sig = 'b' #FIXME Only look at HF power in the receiver
+        for i_fc, fc in enumerate(f_car):
+            sig = 'b'  # FIXME Only look at HF power in the receiver
             amp_sig = np.squeeze(amp[sig][:, i_fc])
             res = {}
-            #res['indiv'] = regression_indiv(phase, amp_sig)
+            # res['indiv'] = regression_indiv(phase, amp_sig)
             res['diff'] = regression_phasediff(phase, amp_sig)
             res['combined'] = regression_combined(phase, amp_sig)
             results_fm.append(res)
@@ -1548,7 +1535,7 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
     Start out by selecting one frequency for phase and one frequency for amp.
     """
 
-    # #### For testing
+    #  #### For testing
     # from comlag import *
     # from comlag import _wavelet, _wavelet_tfr, _buffer, _match_dims
     # f_mod = [[9, 11]]
@@ -1560,7 +1547,9 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
     phase_bin_centers = np.mean(np.stack([phase_bins[1:], phase_bins[:-1]]),
                                 axis=0)
 
-    rsquare = lambda x,y: stats.pearsonr(x,y)[0] ** 2
+    def rsquare(x, y):
+        return stats.pearsonr(x, y)[0] ** 2
+
     s = {'a': s_a,
          'b': s_b}
 
@@ -1572,31 +1561,32 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
         # amp.shape: (time, carrier freq)
         if amp[sig].ndim == 3:
             amp[sig] = np.concatenate(
-                            [amp[sig][:,:,k] for k in range(amp[sig].shape[2])],
+                            [amp[sig][:, :, k]
+                             for k in range(amp[sig].shape[2])],
                             axis=0)
 
     # Compute the 2D-CFC
-    sig_amp = 'b' # Which signal to use for amplitude FIXME make work for both
+    sig_amp = 'b'  # Which signal to use for amplitude FIXME make work for both
     n_vonmises_params = 3
     n_vonmises_2d_params = 4
     fits = {}
     fits['a'] = np.full([len(f_mod), len(f_car), n_vonmises_params],
-                         np.nan)
+                        np.nan)
     fits['b'] = fits['a'].copy()
     fits['2d'] = np.full([len(f_mod), len(f_car), n_vonmises_2d_params],
-                          np.nan)
+                         np.nan)
     fits['2d_cont'] = fits['2d'].copy()
     rsq = {}
     rsq['a'] = np.full([len(f_mod), len(f_car)],
-                        np.nan)
+                       np.nan)
     rsq['b'] = rsq['a'].copy()
     rsq['2d'] = rsq['a'].copy()
     rsq['2d_cont'] = rsq['a'].copy()
-    for i_fm,fm in enumerate(f_mod):
+    for i_fm, fm in enumerate(f_mod):
 
         # Get low frequency phase
         phase = {}
-        phase_b = {} # Binned
+        phase_b = {}  # Binned
         for sig in 'ab':
             s_filt = bp_filter(s[sig].T, fm[0], fm[1], fs, 2).T
             phase[sig] = np.angle(hilbert(s_filt, axis=0))
@@ -1606,32 +1596,33 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
                 phase[sig] = np.ravel(phase[sig], 'F')
                 phase_b[sig] = np.ravel(phase_b[sig], 'F')
 
-        # # Plot the HF amplitude as a function of phase in each signal
+        #  # Plot the HF amplitude as a function of phase in each signal
         # plt.clf()
         # plt.plot(phase['a'], amp['b'], 'o', alpha=0.2)
         # plt.plot(phase['b'], amp['b'], 'o', alpha=0.2)
 
         # Compute CFC for each carrier freq using KL divergence
-        for i_fc,fc in enumerate(f_car):
+        for i_fc, fc in enumerate(f_car):
             # Average HF amplitude per LF phase bin
-            amplitude_dist = np.ones([n_bins, n_bins]) # 1 to avoid log(0)
-            for bin_a, bin_b in itertools.product(range(n_bins), range(n_bins)):
+            amplitude_dist = np.ones([n_bins, n_bins])  # 1 to avoid log(0)
+            for bin_a, bin_b in itertools.product(range(n_bins),
+                                                  range(n_bins)):
                 keep_samps = (phase_b['a'] == bin_a) & (phase_b['b'] == bin_b)
                 a = np.mean(amp[sig_amp][keep_samps, i_fc])
                 amplitude_dist[bin_a, bin_b] = a
 
-            # Fit separate Von Mises distributions for amp and phase in each sig
-            bounds = ([1e-10, -np.pi, 0], # Kappa, mu, scale
+            # Fit separate Von Mises distribs for amp and phase in each sig
+            bounds = ([1e-10, -np.pi, 0],  # Kappa, mu, scale
                       [np.inf, np.pi, np.inf])
             x = phase_bin_centers
             y_a = np.mean(amplitude_dist, axis=0)
             y_b = np.mean(amplitude_dist, axis=1)
             popt_a, _ = optimize.curve_fit(vonmises,
-                                                 x, y_a,
-                                                 bounds=bounds)
+                                           x, y_a,
+                                           bounds=bounds)
             popt_b, _ = optimize.curve_fit(vonmises,
-                                                 x, y_b,
-                                                 bounds=bounds)
+                                           x, y_b,
+                                           bounds=bounds)
             # Save the model fits
             fits['a'][i_fm, i_fc, :] = popt_a
             fits['b'][i_fm, i_fc, :] = popt_b
@@ -1652,11 +1643,11 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
             x_a = np.repeat(phase_bin_centers, phase_bin_centers.size)
             x_b = np.tile(phase_bin_centers, phase_bin_centers.size)
             x = np.stack([x_a, x_b])
-            y = np.reshape(amplitude_dist, [-1], order='C') # By rows
-            bounds = ((1e-10, -np.pi, -np.pi, 0), # kappa, mu1, mu2, scale
+            y = np.reshape(amplitude_dist, [-1], order='C')  # By rows
+            bounds = ((1e-10, -np.pi, -np.pi, 0),  # kappa, mu1, mu2, scale
                       (np.inf, np.pi, np.pi, np.inf))
             popt_2d, _ = optimize.curve_fit(vm2d_helper, x, y,
-                                                  bounds=bounds)
+                                            bounds=bounds)
             # Save the model fits
             fits['2d'][i_fm, i_fc, :] = popt_2d
             # Save goodness-of-fit metrics
@@ -1664,7 +1655,7 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
             # plt.clf()
             # p1, p2 = np.meshgrid(phase_bins[:-1], phase_bins[:-1])
             # plt.contourf(p1, p2, amplitude_dist)
-            # plt.plot(popt_2d[2], popt_2d[1], 'ro') # Plot the 2D VonMises fit
+            # plt.plot(popt_2d[2], popt_2d[1], 'ro')  # Plot 2D VonMises fit
             # plt.ylabel('$\\Phi(b)$')
             # plt.xlabel('$\\Phi(a)$')
             # plt.colorbar()
@@ -1677,13 +1668,14 @@ def cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car, n_cycles=5, n_bins=18):
                                 [n_bins, 1])
             amp_cont -= np.tile(vonmises(phase_bin_centers, *popt_b),
                                 [n_bins, 1]).T
-            y = np.reshape(amp_cont, [-1], order='C') # By rows
+            y = np.reshape(amp_cont, [-1], order='C')  # By rows
             popt_2d_cont, _ = optimize.curve_fit(vm2d_helper, x, y,
-                                                  bounds=bounds)
+                                                 bounds=bounds)
             # Save the model fits
             fits['2d_cont'][i_fm, i_fc, :] = popt_2d_cont
             # Save goodness-of-fit metrics
-            rsq['2d_cont'][i_fm, i_fc] = rsquare(y, vm2d_helper(x, *popt_2d_cont))
+            rsq['2d_cont'][i_fm, i_fc] = rsquare(y,
+                                                 vm2d_helper(x, *popt_2d_cont))
 
     return fits, rsq
 
@@ -1715,9 +1707,12 @@ def vonmises2d(x1, x2, kappa, mu1, mu2, scale):
     kappa : float
     """
     # Get the Euclidean distance to the peak phase after wrapping to (0, 2pi)
-    piwrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
+
+    def piwrap(x):
+        return (x + np.pi) % (2 * np.pi) - np.pi
+
     # c = np.sqrt((piwrap(x1 - mu1) ** 2) + (piwrap(x2 - mu2) ** 2))
-    #c = np.max(np.abs(np.stack([x1 - mu1, x2 - mu2])), axis=0)
+    # c = np.max(np.abs(np.stack([x1 - mu1, x2 - mu2])), axis=0)
     c1 = piwrap(x1 - mu1)
     c2 = piwrap(x2 - mu2)
     c = np.stack([c1, c2])
@@ -1732,7 +1727,7 @@ def vonmises2d(x1, x2, kappa, mu1, mu2, scale):
 def vm2d_helper(x, kappa, mu1, mu2, scale):
     """ x is an array. First dim is for the different variables
     """
-    y = vonmises2d(x[0,:], x[1,:], kappa, mu1, mu2, scale)
+    y = vonmises2d(x[0, :], x[1, :], kappa, mu1, mu2, scale)
     return y
 
 
@@ -1745,8 +1740,9 @@ def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
     # psi_bw: Frequency smoothing of the PSI in Hz
     # phase_diff_freq_lims: Freqs at which phase diff is calculated
     fft_freqs = np.fft.fftfreq(nfft, 1 / fs)
-    phase_diff_freq_inx = (fft_freqs > phase_diff_freq_lims[0]) \
-                            & (fft_freqs < phase_diff_freq_lims[1])
+    phase_diff_freq_inx = \
+        (fft_freqs > phase_diff_freq_lims[0]) \
+        & (fft_freqs < phase_diff_freq_lims[1])
     phase_diff_freq_inx = np.nonzero(phase_diff_freq_inx)[0]
     phase_bins = np.linspace(-np.pi, np.pi, n_bins, endpoint=False)
 
@@ -1763,12 +1759,12 @@ def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
     csd_ij = np.zeros([nfft, n_bins, nfft], dtype=np.complex128)
     csd_ii = csd_ij.copy()
     csd_jj = csd_ij.copy()
-    phase_bin_counts = np.zeros([n_bins, nfft]) # LF phase bin, phase-diff freq
+    phase_bin_counts = np.zeros([n_bins, nfft])  # LF phase bin, phase-diff frq
     for seg in segment_onsets:
         sl = slice(seg, (seg + nfft))
-        z_i = _dft_helper(s_a[sl]) # Windowed DFT of this segment
+        z_i = _dft_helper(s_a[sl])  # Windowed DFT of this segment
         z_j = _dft_helper(s_b[sl])
-        phase_diff = np.angle(z_i * np.conj(z_j)) # phase diff for each freq
+        phase_diff = np.angle(z_i * np.conj(z_j))  # phase diff for each freq
         for i_freq in phase_diff_freq_inx:
             i_bin = np.nonzero(phase_bins < phase_diff[i_freq])[0].max()
             phase_bin_counts[i_bin, i_freq] += 1
@@ -1801,8 +1797,8 @@ def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
 
     # Get the PSI for each frequency using a moving average
     Psi_ij = np.full([np.sum(keep_freqs), n_bins, np.sum(keep_freqs)], np.nan)
-    kern = np.ones(np.sum(fft_freqs[:int(nfft/2)] <= psi_bw)) # Moving avg kern
-    inner = np.conj(C_ij) * np.roll(C_ij, 1, axis=0) # Inner part of PSI calc
+    kern = np.ones(np.sum(fft_freqs[:int(nfft/2)] <= psi_bw))  # For moving avg
+    inner = np.conj(C_ij) * np.roll(C_ij, 1, axis=0)  # Inner part of PSI calc
     for i_bin in range(n_bins):
         for i_freq in phase_diff_freq_inx:
             Psi_ij[:, i_bin, i_freq] = np.imag(np.convolve(
@@ -1813,7 +1809,7 @@ def psi_phaselag(s_a, s_b, fs, nfft, step_size=None, n_bins=10, psi_bw=10,
     # Compute the modulation index
     # PSD of a sine wave fit to the PSI as a function of phase-difference
     sine_psd = (np.abs(np.fft.fft(Psi_ij, axis=1)) ** 2) / n_bins
-    mi_comod = sine_psd[:, 1, :] # Take the freq matching the whole signal
+    mi_comod = sine_psd[:, 1, :]  # Take the freq matching the whole signal
 
     # Bundle the results together
     res = dict(Psi_ij=Psi_ij,
@@ -1831,10 +1827,15 @@ def pearson(a, b):
     r = cov / (a.size * a.std() * b.std())
     return r
 
+
 def xcorr(a, b, max_lag):
     """ Normalized cross-correlation
     """
-    pearson = lambda a,b:  np.dot(a - a.mean(), b - b.mean()) / (a.size * a.std() * b.std())
+
+    def pearson(a, b):
+        r = np.dot(a - a.mean(), b - b.mean()) / (a.size * a.std() * b.std())
+        return r
+
     lags = range(-max_lag, max_lag)
     padding = np.zeros(max_lag)
     a = np.concatenate([padding, a, padding])
@@ -1844,6 +1845,7 @@ def xcorr(a, b, max_lag):
         x = pearson(a, np.roll(b, lag))
         xc.append(x)
     return lags, xc
+
 
 def bp_filter(data, lowcut, highcut, fs, order=2):
     def butter_bandpass(lowcut, highcut, fs, order):
@@ -1868,8 +1870,8 @@ def plot_filter_kernel(lowcut, highcut, fs, dur, **plot_kwargs):
         Duration of the impulse calculated in seconds.
     """
     import matplotlib.pyplot as plt
-    impulse_len = int(dur * fs) # samples
-    t = np.arange(impulse_len) / fs # Time vector in seconds
+    impulse_len = int(dur * fs)  # samples
+    t = np.arange(impulse_len) / fs  # Time vector in seconds
     t -= t.mean()
 
     impulse = np.zeros(impulse_len)
@@ -1881,9 +1883,9 @@ def plot_filter_kernel(lowcut, highcut, fs, dur, **plot_kwargs):
     return ir
 
 
-#############
-# SKETCHPAD # 
-#############
+##############
+# SKETCHPAD  #
+##############
 
 
 '''
@@ -1900,10 +1902,10 @@ noise = np.random.normal(scale=noise_amp * scale, size=x1.shape)
 x = np.stack([x1, x2])
 y = vm2d_helper(x, kappa, mu1, mu2, scale)
 y = y + noise
-bounds = [(1e-10, np.inf), # kappa
-          (-np.pi, np.pi), # mu
-          (-np.pi, np.pi), # mu
-          (0, np.inf)] # scale
+bounds = [(1e-10, np.inf),  # kappa
+          (-np.pi, np.pi),  # mu
+          (-np.pi, np.pi),  # mu
+          (0, np.inf)]  # scale
 popt, pcov = optimize.curve_fit(vm2d_helper, x, y)
 
 plt.clf()
@@ -1921,12 +1923,12 @@ msg = f"""
       k = {kappa:.2f}
       mu = {[mu1, mu2]}
       scale = {scale:.2f}
-      
+
       Fitted
       k = {popt[0]:.2f}
       mu = {popt[1:3]}
       scale = {popt[3]:.2f}
-      
+
       Error
       k = {kappa - popt[0]:.2f}
       mu = {np.array([mu1, mu2]) - popt[1:3]}
@@ -1949,9 +1951,9 @@ y = vonmises(x, kappa, mu, scale)
 y = y + noise
 
 # Fit using curve_fit
-bounds = [(1e-10, np.inf), # kappa
-          (-np.pi, np.pi), # mu
-          (0, np.inf)] # scale
+bounds = [(1e-10, np.inf),  # kappa
+          (-np.pi, np.pi),  # mu
+          (0, np.inf)]  # scale
 popt_cf, pcov = optimize.curve_fit(vonmises, x, y)
 
 # Fit using leastsq
@@ -1973,7 +1975,7 @@ for i_param in range(3):
     params = [true_vals[i_param],
               popt_cf[i_param],
               popt_ls[i_param]]
-    for p,ptype,lab in zip(params, point_types, labels):
+    for p, ptype, lab in zip(params, point_types, labels):
         plt.plot(0, p, ptype, label=lab)
     plt.ylim(ylims[i_param])
 plt.legend()
@@ -1985,7 +1987,7 @@ msg = f"""
       k = {kappa:.2f}
       mu = {mu}
       scale = {scale:.2f}
-      
+
       Fitted - curve_fit
       k = {popt_cf[0]:.2f}
       mu = {popt_cf[1]:.2f}
@@ -1995,7 +1997,7 @@ msg = f"""
       k = {popt_ls[0]:.2f}
       mu = {piwrap(popt_ls[1]):.2f}
       scale = {popt_ls[2]:.2f}
-      
+
       Error - curve_fit
       k = {kappa - popt_cf[0]:.2f}
       mu = {mu - popt_cf[1]:.2f}
