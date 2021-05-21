@@ -873,6 +873,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  n_perm_signal=0,
                                  n_perm_shift=0,
                                  min_shift=None, max_shift=None,
+                                 perm_phasebin_flip=False,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
                                  diff_method='both',
@@ -949,6 +950,11 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     min_shift, max_shift : int
         The minimum and maximum number of samples to shift by when performing
         random permutation tests
+    perm_phasebin_flip : bool
+        Run a permutation test by switching the TE in each phase bin between
+        the two directions (A-->B and B--A) before calculating the phase
+        dependence. Because we're dealing with a fairly small number of phase
+        bins, exhaustively test every permutation.
     cluster_alpha : float
         The alpha threshold for including values in the clusters.
     method : str
@@ -1022,7 +1028,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
     assert len(np.nonzero([n_perm_shift,
                            n_perm_signal,
                            n_perm_phasebin,
-                           n_perm_phasebin_indiv])[0]) <= 1, \
+                           n_perm_phasebin_indiv,
+                           perm_phasebin_flip])[0]) <= 1, \
         'Only use one type of permutation analysis at a time'
     if n_perm_shift:
         n_perm = n_perm_shift
@@ -1037,6 +1044,8 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         assert s_a.ndim == 2, \
                 'Permuting signals only works for signals with multiple epochs'
         n_perm = n_perm_signal
+    elif perm_phasebin_flip:
+        n_perm = 2 ** n_bins
     else:
         n_perm = 0
 
@@ -1203,29 +1212,45 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             np.random.shuffle(perm_inx_b)
             mi[i_perm + 1, :, :, :, 0, :] = mi[0:1, :, :, :, 0, perm_inx_a]
             mi[i_perm + 1, :, :, :, 1, :] = mi[0:1, :, :, :, 1, perm_inx_b]
+    elif perm_phasebin_flip:
+        perm_indices = itertools.product([0, 1], repeat=n_bins)
+        for i_perm, perm_inx in enumerate(perm_indices):
+            for i_bin in range(n_bins):
+                if perm_inx[i_bin]:  # Flip them if there's a 1
+                    v0 = mi[0:1, :, :, :, 1, i_bin]
+                    v1 = mi[0:1, :, :, :, 0, i_bin]
+                else:
+                    v0 = mi[0:1, :, :, :, 0, i_bin]
+                    v1 = mi[0:1, :, :, :, 1, i_bin]
+                mi[i_perm + 1, :, :, :, 0, i_bin] = v0
+                mi[i_perm + 1, :, :, :, 1, i_bin] = v1
+        # The first perm is the same as the real data
+        mi = mi[1:, ...]
+        n_perm -= 1
 
     # Compute a phase-dependence index for each combination of LF and HF
     mi_c = {}
-    if diff_method in ('PD(AB)-PD(BA)', 'both'):
-        mi_comod = mod_index(mi, method)
-        mi_comod = {'a': mi_comod[..., 0],
-                    'b': mi_comod[..., 1]}
-        mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
-        mi_c['PD(AB)-PD(BA)'] = mi_comod
-    if diff_method in ('PD(AB-BA)', 'both'):
-        mi_diff_shape = list(mi.shape)
-        mi_diff_shape[4] += 1  # One extra 'column' for the directions
-        mi_diff = np.full(mi_diff_shape, np.nan)
-        mi_diff[:, :, :, :, :2, :] = mi
-        mi_diff[:, :, :, :, 2, :] = mi[:, :, :, :, 0, :] - mi[:, :, :, :, 1, :]
-        mi = mi_diff
-        # Compute a phase-dependence index for each combination of LF and HF
-        mi_comod = mod_index(mi, method)
-        # Get the difference between directions
-        mi_comod = {'a': mi_comod[..., 0],
-                    'b': mi_comod[..., 1],
-                    'diff': mi_comod[..., 2]}
-        mi_c['PD(AB-BA)'] = mi_comod
+    if method is not None:
+        if diff_method in ('PD(AB)-PD(BA)', 'both'):
+            mi_comod = mod_index(mi, method)
+            mi_comod = {'a': mi_comod[..., 0],
+                        'b': mi_comod[..., 1]}
+            mi_comod['diff'] = mi_comod['a'] - mi_comod['b']
+            mi_c['PD(AB)-PD(BA)'] = mi_comod
+        if diff_method in ('PD(AB-BA)', 'both'):
+            mi_diff_shape = list(mi.shape)
+            mi_diff_shape[4] += 1  # One extra 'column' for the directions
+            mi_diff = np.full(mi_diff_shape, np.nan)
+            mi_diff[:, :, :, :, :2, :] = mi
+            mi_diff[:, :, :, :, 2, :] = mi[:, :, :, :, 0, :] - mi[:, :, :, :, 1, :]
+            mi = mi_diff
+            # Compute a phase-dependence index for each combination of LF and HF
+            mi_comod = mod_index(mi, method)
+            # Get the difference between directions
+            mi_comod = {'a': mi_comod[..., 0],
+                        'b': mi_comod[..., 1],
+                        'diff': mi_comod[..., 2]}
+            mi_c['PD(AB-BA)'] = mi_comod
 
     # Get clusters and p-values
     if n_perm > 0:
