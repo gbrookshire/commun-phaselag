@@ -31,6 +31,7 @@ import comlag
 import gcmi
 from tqdm import tqdm
 import copy
+import simulate
 
 plt.ion()
 
@@ -1089,8 +1090,8 @@ i_perm = 0  # 0: Empirical data; >0: Permutations
 
 ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
-date = '2021-04-26'  # Randomly shifted
-# date = '2021-05-13'  # Randomly shuffled A/B
+# date = '2021-04-26'  # Randomly shifted
+date = '2021-05-13'  # Randomly shuffled A/B
 pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
 diff_type = 'PD(AB)-PD(BA)'
@@ -1154,7 +1155,8 @@ mi_params['f_mod'] = mi_params['f_mod'][i_fm]
 mi_params['f_car'] = mi_params['f_car'][i_fc]
 mi_params['f_mod_bw'] = mi_params['f_mod'] / lf_ratio
 mi_params['f_car_bw'] = mi_params['f_car'] / hf_ratio
-mi_params['n_perm_shift'] = 1
+mi_params['n_perm_shift'] = 0
+mi_params['n_perm_signal'] = 1
 mi_params['return_phase_bins'] = True
 
 d = loadmat(data_dir + fnames[i_rat])
@@ -1166,6 +1168,13 @@ downsamp_factor = 5
 s = [signal.decimate(sig, downsamp_factor) for sig in s]
 fs /= downsamp_factor
 
+# Split the data into epochs
+epoch_dur = 5.0
+epoch_len = int(epoch_dur * fs)
+n_splits = len(s[0]) // epoch_len
+sig_len = n_splits * epoch_len
+s = [np.stack(np.split(sig[:sig_len], n_splits), axis=1) for sig in s]
+
 lag_sec = 0.006
 lag = int(lag_sec * fs)
 mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
@@ -1176,6 +1185,7 @@ mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
 # mi dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
 labels = ('a', 'b', 'diff')
 colors = ['firebrick', 'grey', 'royalblue']
+plt.figure()
 for i_direc in range(2):  # a, b, diff
     plt.subplot(2, 3, i_direc + 4)
     for i_freq in range(3):
@@ -1194,27 +1204,33 @@ plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perm{i_perm}.png')
 
 # Plot the TE by phase-bin for a few permutations
 n_perms = 5
-mi_params['n_perm_shift'] = n_perms
-mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
-                                                  fs=fs,
-                                                  lag=[lag],
-                                                  **mi_params)
-plt.figure()
-for i_perm in range(n_perms):
-    for i_direc in range(2):
-        plt.subplot(n_perms, 2, i_direc + 1 + (i_perm * 2))
-        for i_freq in range(3):
-            x = np.squeeze(mi[i_perm, i_freq, 0, 0, i_direc, :])
-            plt.plot(x,
-                     label=mi_params['f_mod'][i_freq],
-                     color=colors[i_freq])
-        plt.xticks([])
-        plt.xlabel('Phase bins')
-        plt.ylabel('TE (bits)')
-        # if i_direc == 0 and i_perm == 0:
-        #     plt.legend()
-plt.tight_layout()
-plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perms.png')
+for rand_type in ('shift', 'shuffleAB'):
+    if rand_type == 'shift':
+        mi_params['n_perm_shift'] = n_perms
+        mi_params['n_perm_signal'] = 0
+    elif rand_type == 'shuffleAB':
+        mi_params['n_perm_shift'] = 0
+        mi_params['n_perm_signal'] = n_perms
+    mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                      fs=fs,
+                                                      lag=[lag],
+                                                      **mi_params)
+    plt.figure()
+    for i_perm in range(n_perms):
+        for i_direc in range(2):
+            plt.subplot(n_perms, 2, i_direc + 1 + (i_perm * 2))
+            for i_freq in range(3):
+                x = np.squeeze(mi[i_perm, i_freq, 0, 0, i_direc, :])
+                plt.plot(x,
+                         label=mi_params['f_mod'][i_freq],
+                         color=colors[i_freq])
+            plt.xticks([])
+            plt.xlabel('Phase bins')
+            plt.ylabel('TE (bits)')
+            # if i_direc == 0 and i_perm == 0:
+            #     plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perms_{rand_type}.png')
 
 
 # Show the randomization distributions for the adjacent flipped pixels
@@ -1227,8 +1243,13 @@ hf_freqs = [50]  # Which HF frequencies to zoom in on
 
 ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
-# date = '2021-04-26'  # Randomly shifted
-date = '2021-05-13'  # Randomly shuffled A/B
+
+# date = '2021-04-26'
+# perm_type = 'shifted'  # Randomly shifted
+
+date = '2021-05-13'
+perm_type = 'shuffledAB'  # Randomly shuffled A/B
+
 pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
 diff_type = 'PD(AB)-PD(BA)'
@@ -1245,10 +1266,34 @@ fn = files[match_inx]
 saved_data = np.load(f"{data_dir}te/{fn}", allow_pickle=True)
 mi_params = saved_data.get('mi_params').item()
 te = saved_data.get('te')[0][diff_type]
+
+# Plot raw TE distributions
+colors = ['tab:blue', 'tab:green', 'tab:red']
+plt.figure()
+for i_freq in range(len(lf_freqs)):
+    plt.subplot(2, 1, i_freq + 1)
+    plt.title(f"{lf_freqs[i_freq]} Hz")
+    for i_direc, direc in enumerate(directions):
+        lf_inx = mi_params['f_mod'].tolist().index(lf_freqs[i_freq])
+        hf_inx = mi_params['f_car'].tolist().index(hf_freqs[0])
+        x = te[direc][:, lf_inx, hf_inx, 0]
+        plt.hist(x[1:], 20,
+                 color=colors[i_direc],
+                 histtype='step', density=True)
+        plt.axvline(x=x[0], color=colors[i_direc],
+                    linestyle='--', label=direc)
+        plt.xlabel('PhaseDep TE (bits$^2$)')
+        plt.ylabel('Density')
+plt.legend()
+plt.tight_layout()
+plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_hist-{perm_type}.png')
+
+# Plot z-scores
 for direc in directions:
     te[direc] = stats.zscore(te[direc], axis=None)
 
 plt.figure()
+directions = ['a', 'b', 'diff']
 i_plot = 1
 for direc in directions:
     for i_freq in range(len(lf_freqs)):
@@ -1261,4 +1306,308 @@ for direc in directions:
         plt.axvline(x=x[0], color='r')
         i_plot += 1
 plt.tight_layout()
-plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_z-hist-shuffledAB.png')
+plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_z-hist-{perm_type}.png')
+
+
+#######
+# Does swapping A/B cause TE to be drastically reduced?
+# - Plot raw TE histogram instead of PhaseDep(AB-BA)
+# - Simulated data along with raw data
+data_type = 'rat'  # rat, sim, sim-pac
+lf_ratio = 2.0
+hf_ratio = 3.0
+i_rat = 4
+# LF frequency is meaningless if we're collapsing over phase bins
+f_mod = np.array([1])
+f_car = np.array([50])  # Which HF frequencies to zoom in on
+f_mod_bw = f_mod / lf_ratio
+f_car_bw = f_car / hf_ratio
+
+mi_params = dict(f_mod=f_mod,
+                 f_mod_bw=f_mod_bw,
+                 f_car=f_car,
+                 f_car_bw=f_car_bw,
+                 n_bins=8,
+                 decimate=None,
+                 n_perm_phasebin=0,
+                 n_perm_phasebin_indiv=0,
+                 n_perm_signal=0,
+                 n_perm_shift=0,
+                 min_shift=None, max_shift=None,
+                 perm_phasebin_flip=False,
+                 cluster_alpha=0.05,
+                 diff_method='both',
+                 calc_type=2,
+                 method=None,
+                 return_phase_bins=True,
+                 verbose=True)
+if mi_params['n_perm_signal'] > 0:
+    perm_type = 'shuffledAB'
+elif mi_params['perm_phasebin_flip']:
+    perm_type = 'phasebin_flip'
+else:
+    perm_type = 'NOT_SPECIFIED'
+# for k,v in mi_params.items(): globals()[k] = v
+
+d = loadmat(data_dir + fnames[i_rat])
+fs = d['Fs'][0][0]
+s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+
+# Downsample the data
+downsamp_factor = 5
+s = [signal.decimate(sig, downsamp_factor) for sig in s]
+fs /= downsamp_factor
+
+if data_type == 'sim':  # Simulate data
+    t, s_a, s_b = simulate.sim(dur=len(s[0]) / fs,
+                               fs=fs,
+                               gamma_freq=(40, 60),
+                               noise_amp=1.0,
+                               signal_leakage=0,
+                               gamma_lag_a=0.010,
+                               gamma_lag_a_to_b=0.006,
+                               common_noise_amp=0.5,
+                               common_alpha_amp=0.0)
+    s = [s_a, s_b]
+elif data_type == 'sim-pac':
+    t, s_a, s_b = simulate.sim_lf_coh_with_pac(
+            dur=len(s[0]) / fs,
+            fs=fs,
+            lag=int(0.006 * fs),
+            gamma_freq=(40, 60))
+    s = [s_a, s_b]
+
+# Split the data into epochs
+epoch_dur = 5.0
+epoch_len = int(epoch_dur * fs)
+n_splits = len(s[0]) // epoch_len
+sig_len = n_splits * epoch_len
+s = [np.stack(np.split(sig[:sig_len], n_splits), axis=1) for sig in s]
+
+lag_sec = 0.006
+lag = int(lag_sec * fs)
+mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                  fs=fs,
+                                                  lag=[lag],
+                                                  **mi_params)
+# mi dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
+
+plt.figure()
+colors = ['tab:blue', 'tab:green']
+for i_direc, direc in enumerate(['a', 'b']):
+    x = np.squeeze(mi[:, 0, 0, 0, i_direc, 0])
+    print(x[:4])
+    plt.hist(x[1:], 20,
+             color=colors[i_direc],
+             histtype='step', density=True)
+    plt.axvline(x=x[0], color=colors[i_direc],
+                linestyle='--', label=direc)
+    plt.xlabel('TE (bits)')
+    plt.ylabel('Density')
+plt.legend()
+plt.title(f'Raw TE at ${f_car[0]} \\pm {f_car_bw[0] / 2:.1f}$ Hz')
+plt.savefig(f'{plot_dir}te/te_real-vs-shuffled-{perm_type}-{data_type}.png')
+
+# Do the same analysis by hand
+s_filt = [comlag.bp_filter(sig.T,
+                           f_car[0] - (f_car_bw[0] / 2),
+                           f_car[0] + (f_car_bw[0] / 2),
+                           fs, 2).T
+          for sig in s]
+s_hilb = [signal.hilbert(sig, axis=0) for sig in s_filt]
+s_2d = [np.stack([np.real(sig), np.imag(sig)]) for sig in s_hilb]
+s_2d_orig = s_2d.copy()
+
+plt.figure
+plt.subplot(2, 1, 1)
+i_epoch = 0
+plt.plot(s[0][:, i_epoch])
+plt.plot(s_filt[0][:, i_epoch])
+plt.plot(np.real(s_hilb[0][:, i_epoch]))
+plt.plot(np.imag(s_hilb[0][:, i_epoch]))
+plt.plot(s_filt[0][:, i_epoch])
+plt.xlim(0, 100)
+
+
+def L(x):
+    """ lag function """
+    return np.roll(x, lag, axis=1)
+
+
+# Shuffle the two signals A/B
+k_perm = 100
+mi = []
+for i_perm in tqdm(range(k_perm)):
+    del s_2d
+    s_2d = s_2d_orig.copy()
+    if i_perm > 0:  # Shuffle signals
+        for i_epoch in range(s_2d[0].shape[2]):
+            if np.random.choice([True, False]):
+                s0_tmp = s_2d[0][:, :, i_epoch].copy()
+                s1_tmp = s_2d[1][:, :, i_epoch].copy()
+                s_2d[0][:, :, i_epoch] = s1_tmp.copy()
+                s_2d[1][:, :, i_epoch] = s0_tmp.copy()
+    s_2d_append = [np.reshape(sig, (2, -1), order='F') for sig in s_2d]
+    try:
+        i = gcmi.gccmi_ccc(L(s_2d_append[0]),
+                           s_2d_append[1],
+                           L(s_2d_append[1]))
+    except np.linalg.LinAlgError:
+        i = np.nan
+    mi.append(i)
+
+plt.figure()
+plt.hist(mi[1:], 20,
+         color='tab:blue',
+         label='Shuffle A/B',
+         histtype='step', density=True)
+plt.axvline(x=mi[0], color='red',
+            linestyle='--',
+            label='True value')
+
+# Shuffle the epochs. This should have even lower MI than shuffling signals
+s_2d = s_2d_orig.copy()
+mi = []
+for i_perm in tqdm(range(k_perm)):
+    shuffle_inx = np.arange(s_2d[0].shape[-1])  # Shuffle the epochs
+    np.random.shuffle(shuffle_inx)
+    s_2d[0] = s_2d[0][:, :, shuffle_inx]
+    s_2d_append = [np.reshape(sig, (2, -1), order='F') for sig in s_2d]
+    try:
+        i = gcmi.gccmi_ccc(L(s_2d_append[0]),
+                           s_2d_append[1],
+                           L(s_2d_append[1]))
+    except np.linalg.LinAlgError:
+        i = np.nan
+    mi.append(i)
+plt.hist(mi, 20,
+         color='tab:green',
+         label='Shuffle epochs',
+         histtype='step', density=True)
+plt.xlabel('TE (bits)')
+plt.ylabel('Density')
+plt.legend()
+plt.savefig(f'{plot_dir}te/te_real-vs-shuffled-simulated.png')
+
+# Cut the segment into 2 pieces
+# and see if flipping one half drastically reduces TE
+lf_ratio = 2.0
+hf_ratio = 3.0
+i_rat = 4
+# LF frequency is meaningless if we're collapsing over phase bins
+f_mod = np.array([1])
+f_car = np.array([50])  # Which HF frequencies to zoom in on
+f_mod_bw = f_mod / lf_ratio
+f_car_bw = f_car / hf_ratio
+
+d = loadmat(data_dir + fnames[i_rat])
+fs = d['Fs'][0][0]
+s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+
+# Downsample the data
+downsamp_factor = 5
+s = [signal.decimate(sig, downsamp_factor) for sig in s]
+fs /= downsamp_factor
+
+# Do the same analysis by hand
+s_filt = [comlag.bp_filter(sig.T,
+                           f_car[0] - (f_car_bw[0] / 2),
+                           f_car[0] + (f_car_bw[0] / 2),
+                           fs, 2).T
+          for sig in s]
+s_hilb = [signal.hilbert(sig, axis=0) for sig in s_filt]
+s_2d = [np.stack([np.real(sig), np.imag(sig)]) for sig in s_hilb]
+
+# Compute real TE between the two measures
+te_real = {}
+te_real['a'] = gcmi.gccmi_ccc(L(s_2d[0]),
+                              s_2d[1],
+                              L(s_2d[1]))
+te_real['b'] = gcmi.gccmi_ccc(L(s_2d[1]),
+                              s_2d[0],
+                              L(s_2d[0]))
+
+# Flip the second half of the signal and recompute it
+s_2d_flip = [sig.copy() for sig in s_2d]
+n_samps = s[0].size
+s_2d_flip[0][:, n_samps//2:] = s_2d[1][:, n_samps//2:]
+s_2d_flip[1][:, n_samps//2:] = s_2d[0][:, n_samps//2:]
+te_flip = {}
+te_flip['a'] = gcmi.gccmi_ccc(L(s_2d_flip[0]),
+                              s_2d_flip[1],
+                              L(s_2d_flip[1]))
+te_flip['b'] = gcmi.gccmi_ccc(L(s_2d_flip[1]),
+                              s_2d_flip[0],
+                              L(s_2d_flip[0]))
+
+te = list(te_real.values()) + list(te_flip.values())
+te = np.array(te)
+xpos = [1, 2, 4, 5]
+plt.clf()
+plt.plot(xpos, te, 'o')
+plt.axhline(y=0, linestyle='--', color='k')
+plt.xticks(xpos, ['Emp AB', 'Emp BA', 'Flip AB', 'Flip BA'])
+plt.ylabel("TE (bits)")
+plt.savefig(f'{plot_dir}te/te_flip_half.png')
+
+###########################################################################
+# Try this with the new analysis that flips the signal for each phase-bin #
+###########################################################################
+lf_ratio = 2.0
+hf_ratio = 3.0
+i_rat = 4
+# LF frequency is meaningless if we're collapsing over phase bins
+f_mod = np.array([1])
+f_car = np.array([50])  # Which HF frequencies to zoom in on
+f_mod_bw = f_mod / lf_ratio
+f_car_bw = f_car / hf_ratio
+
+mi_params = dict(f_mod=f_mod,
+                 f_mod_bw=f_mod_bw,
+                 f_car=f_car,
+                 f_car_bw=f_car_bw,
+                 n_bins=8,
+                 decimate=None,
+                 n_perm_phasebin=0,
+                 n_perm_phasebin_indiv=0,
+                 n_perm_signal=0,
+                 n_perm_shift=0,
+                 min_shift=None, max_shift=None,
+                 perm_phasebin_flip=True,
+                 cluster_alpha=0.05,
+                 diff_method='both',
+                 calc_type=2,
+                 method='sine psd',
+                 return_phase_bins=True,
+                 verbose=True)
+if mi_params['n_perm_signal'] > 0:
+    perm_type = 'shuffledAB'
+elif mi_params['perm_phasebin_flip']:
+    perm_type = 'phasebin_flip'
+else:
+    perm_type = 'NOT_SPECIFIED'
+# for k,v in mi_params.items(): globals()[k] = v
+
+d = loadmat(data_dir + fnames[i_rat])
+fs = d['Fs'][0][0]
+s = [d['Data_EEG'][:, inx] for inx in [1, 2]]
+
+# Downsample the data
+downsamp_factor = 5
+s = [signal.decimate(sig, downsamp_factor) for sig in s]
+fs /= downsamp_factor
+
+# Split the data into epochs
+epoch_dur = 5.0
+epoch_len = int(epoch_dur * fs)
+n_splits = len(s[0]) // epoch_len
+sig_len = n_splits * epoch_len
+s = [np.stack(np.split(sig[:sig_len], n_splits), axis=1) for sig in s]
+
+lag_sec = 0.006
+lag = int(lag_sec * fs)
+mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
+                                                  fs=fs,
+                                                  lag=[lag],
+                                                  **mi_params)
+
