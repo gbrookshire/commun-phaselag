@@ -1092,6 +1092,7 @@ ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
 # date = '2021-04-26'  # Randomly shifted
 date = '2021-05-13'  # Randomly shuffled A/B
+date = '2021-05-24'  # Permute the TE within each phase bin across signals
 pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
 diff_type = 'PD(AB)-PD(BA)'
@@ -1204,13 +1205,21 @@ plt.savefig(f'{plot_dir}te/zooming_in_on_phase_bins_perm{i_perm}.png')
 
 # Plot the TE by phase-bin for a few permutations
 n_perms = 5
-for rand_type in ('shift', 'shuffleAB'):
+rand_types = ('shift', 'shuffleAB', 'phasebin_flip')
+for rand_type in rand_types:
     if rand_type == 'shift':
         mi_params['n_perm_shift'] = n_perms
         mi_params['n_perm_signal'] = 0
+        mi_params['perm_phasebin_flip'] = False
     elif rand_type == 'shuffleAB':
         mi_params['n_perm_shift'] = 0
         mi_params['n_perm_signal'] = n_perms
+        mi_params['perm_phasebin_flip'] = False
+    elif rand_type == 'phasebin_flip':
+        mi_params['n_perm_shift'] = 0
+        mi_params['n_perm_signal'] = 0
+        mi_params['perm_phasebin_flip'] = True
+
     mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
                                                       fs=fs,
                                                       lag=[lag],
@@ -1218,7 +1227,9 @@ for rand_type in ('shift', 'shuffleAB'):
     plt.figure()
     for i_perm in range(n_perms):
         for i_direc in range(2):
-            plt.subplot(n_perms, 2, i_direc + 1 + (i_perm * 2))
+            plt.subplot(n_perms,
+                        2,
+                        i_direc + 1 + (i_perm * 2))
             for i_freq in range(3):
                 x = np.squeeze(mi[i_perm, i_freq, 0, 0, i_direc, :])
                 plt.plot(x,
@@ -1243,12 +1254,16 @@ hf_freqs = [50]  # Which HF frequencies to zoom in on
 
 ratio_levels = np.arange(2.0, 6.01, 1.0)
 files = os.listdir(data_dir + 'te/')
+directions = ['a', 'b', 'diff']
 
 # date = '2021-04-26'
 # perm_type = 'shifted'  # Randomly shifted
 
-date = '2021-05-13'
-perm_type = 'shuffledAB'  # Randomly shuffled A/B
+# date = '2021-05-13'
+# perm_type = 'shuffledAB'  # Randomly shuffled A/B
+
+date = '2021-05-24'
+perm_type = 'perm_phasebin_flip'  # Permute the TE w/in phase bins b/w signals
 
 pattern = f'rat{i_rat}_lfratio-{lf_ratio:.1f}_hfratio-{hf_ratio:.1f}.npz'
 pattern = f'te_{date}-[0-9]+_{pattern}'
@@ -1553,40 +1568,37 @@ plt.savefig(f'{plot_dir}te/te_flip_half.png')
 ###########################################################################
 # Try this with the new analysis that flips the signal for each phase-bin #
 ###########################################################################
-lf_ratio = 2.0
-hf_ratio = 3.0
+# lf_ratio = 2.0
+# hf_ratio = 3.0
 i_rat = 4
-# LF frequency is meaningless if we're collapsing over phase bins
-f_mod = np.array([1])
-f_car = np.array([50])  # Which HF frequencies to zoom in on
-f_mod_bw = f_mod / lf_ratio
-f_car_bw = f_car / hf_ratio
+fn = fnames[i_rat]
+# lf_freqs = [8, 10]  # Which LF frequencies to zoom in on
+# hf_freqs = [50]  # Which HF frequencies to zoom in on
+# f_mod_bw = f_mod / lf_ratio
+# f_car_bw = f_car / hf_ratio
 
-mi_params = dict(f_mod=f_mod,
-                 f_mod_bw=f_mod_bw,
-                 f_car=f_car,
-                 f_car_bw=f_car_bw,
-                 n_bins=8,
-                 decimate=None,
-                 n_perm_phasebin=0,
-                 n_perm_phasebin_indiv=0,
-                 n_perm_signal=0,
-                 n_perm_shift=0,
-                 min_shift=None, max_shift=None,
-                 perm_phasebin_flip=True,
-                 cluster_alpha=0.05,
-                 diff_method='both',
-                 calc_type=2,
-                 method='sine psd',
-                 return_phase_bins=True,
-                 verbose=True)
-if mi_params['n_perm_signal'] > 0:
-    perm_type = 'shuffledAB'
-elif mi_params['perm_phasebin_flip']:
-    perm_type = 'phasebin_flip'
-else:
-    perm_type = 'NOT_SPECIFIED'
-# for k,v in mi_params.items(): globals()[k] = v
+mi_params = {
+        'f_mod': np.array([8,  9, 10]),
+        'f_mod_bw': np.array([4.0, 4.5, 5.0]),
+        'f_car': np.array([50]),
+        'f_car_bw': np.array([16.66666667]),
+        'n_bins': 8,
+        'decimate': None,
+        'n_perm_phasebin': 0,
+        'n_perm_phasebin_indiv': 0,
+        'n_perm_signal': 0,
+        'n_perm_shift': 0,
+        'min_shift': None,
+        'max_shift': None,
+        'perm_phasebin_flip': True,
+        'cluster_alpha': 0.05,
+        'diff_method': 'both',
+        'calc_type': 2,
+        'method': 'sine psd',
+        'verbose': True,
+        'return_phase_bins': True,
+       }
+
 
 d = loadmat(data_dir + fnames[i_rat])
 fs = d['Fs'][0][0]
@@ -1611,3 +1623,93 @@ mi_c, mi, _ = comlag.cfc_phaselag_transferentropy(s[0], s[1],
                                                   lag=[lag],
                                                   **mi_params)
 
+plt.figure()
+for diff_type in ('PD(AB)-PD(BA)', 'PD(AB-BA)'):
+    plt.hist(mi_c[diff_type]['diff'][1:, 0, 0, 0])
+
+# Load the full saved data for this rat
+# fn = 'te_2021-05-24-1108_rat4_lfratio-2.0_hfratio-3.0.npz'  # 8 phase bins
+fn = 'te_2021-05-24-1352_rat4_lfratio-2.0_hfratio-3.0.npz'  # 10 phase bins
+diff_type = 'PD(AB)-PD(BA)'
+i_lf = 4  # 8 Hz
+i_hf = 4  # 50 Hz
+saved_data = np.load(f"{data_dir}te/{fn}", allow_pickle=True)
+mi_params = saved_data.get('mi_params').item()
+te = saved_data.get('te')[0][diff_type]
+te_bins = saved_data.get('te')[1]
+clust_info = saved_data.get('te')[2][diff_type]
+perm_sample = np.random.choice(te_bins.shape[0], 5)
+
+# Plot each direction
+plt.figure()
+directions = ('a', 'b', 'diff')
+for i_direc, direc in enumerate(directions):
+    # Plot the comodulogram
+    plt.subplot(3, 3, i_direc + 1)
+    plt.title(direc)
+    x = stats.zscore(te[direc], axis=None)
+    x = x[0, :, :, 0]  # Select permutation
+    max_level = np.max(np.abs(x))
+    plt.imshow(x.T,
+               origin="lower",
+               interpolation="none",
+               aspect='auto',
+               vmin=-max_level, vmax=max_level,
+               cmap=plt.cm.RdBu_r)
+    ytick_spacing = 4
+    xtick_spacing = 4
+    plt.yticks(range(len(mi_params['f_car']))[::ytick_spacing],
+               mi_params['f_car'][::ytick_spacing])
+    plt.xticks(range(len(mi_params['f_mod']))[::xtick_spacing],
+               mi_params['f_mod'][::xtick_spacing])
+    plt.xlabel('LF freq (Hz)')
+    plt.ylabel('HF freq (Hz)')
+    cb = plt.colorbar(format='%.2f',
+                      ticks=[-max_level, max_level])
+    cb.ax.set_ylabel('Power (Z-score)')
+    if direc == 'diff':
+        clust_labels = clust_info['labels'][:, :, 0].astype(int)
+        signif_clusters = np.nonzero(
+            np.array(clust_info['stats']) > clust_info['cluster_thresh'])
+        clust_highlight = np.isin(clust_labels,
+                                  1 + signif_clusters[0]).astype(int)
+        for i_clust in np.unique(clust_labels):
+            if i_clust == 0:
+                continue
+            elif clust_info['stats'][i_clust-1] > clust_info['cluster_thresh']:
+                plt.contour(np.arange(len(mi_params['f_mod'])),
+                            np.arange(len(mi_params['f_car'])),
+                            (clust_labels == i_clust).T,
+                            levels=[0.5],
+                            colors='k')
+
+    # Plot the histograms of permuted vs empirical
+    plt.subplot(3, 3, i_direc + 1 + 3)
+    # x_distrib = te[direc][:, i_lf, i_hf, 0]
+    x_distrib = te[direc][:, :, :, 0].ravel()
+    max_level = np.max(np.abs(x_distrib))
+    plt.hist(x_distrib[1:],
+             color='tab:blue', label='Permuted')
+    plt.axvline(x_distrib[0],
+                color='tab:red', label='Empirical')
+    plt.xlabel('PhaseDep (bits$^2$)')
+    if direc == 'diff':
+        plt.xticks([-max_level, max_level])
+    else:
+        plt.xticks([0, max_level])
+    # plt.gca().ticklabel_format(axis='x', style='sci', scilimits=[-3, 3])
+    plt.ylabel('Count')
+
+    # Plot a sample of the real and permuted signals by bin
+    if direc == 'diff':
+        continue
+    plt.subplot(3, 3, i_direc + 1 + 6)
+    plt.plot(te_bins[perm_sample, i_lf, i_hf, 0, i_direc, :].T,
+             alpha=0.3)
+    plt.plot(te_bins[0, i_lf, i_hf, 0, i_direc, :], '-k')
+    plt.xlabel('Phase bin')
+    plt.ylabel('TE')
+
+plt.tight_layout()
+n_bins = mi_params['n_bins']
+plt.savefig(f'{plot_dir}te/flip_phase_bins_nbins{n_bins}.png')
