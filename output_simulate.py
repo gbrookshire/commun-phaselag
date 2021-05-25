@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from scipy import stats
+from tqdm import tqdm
 
 import simulate
 import comlag
@@ -1003,9 +1004,10 @@ f_car_bw = f_car / 3 # ~5 cycles
 
 
 # Parameters for the simulated signals
+lag = 6
 sim_params = dict(dur=100,
                   fs=1000,
-                  noise_amp=0.1,
+                  noise_amp=1.5,
                   common_noise_amp=0.1,
                   shared_gamma=True)
 
@@ -1016,16 +1018,18 @@ fname = f'te_stats_phase-dep-comm.png'
 ## # Sig A: Alpha oscillation plus pink noise
 ## # Sig B: Same alpha oscillation as Sig A plus independent pink noise
 ## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
-##                                              sim_params['fs'])
+##                                              sim_params['fs'],
+##                                              noise_amp=2)
 ## fname = f'te_stats_lf-coh-plus-noise.png'
 
-## ## Same as above, but lag Sig B (and therefore offset the alpha oscillations).
-## ## This simulates alpha coherence that is not reducible to cross-talk.
-## ## Result: Alpha-limited phase-dependent communication b/w A & B, with
-## ## directionality mostly in one direction but with some switches by HF frequency
+## # Same as above, but lag Sig B (and therefore offset the alpha oscillations).
+## # This simulates alpha coherence that is not reducible to cross-talk.
+## # Result: Alpha-limited phase-dependent communication b/w A & B, with
+## # directionality mostly in one direction but with some switches by HF frequency
 ## t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
 ##                                              sim_params['fs'],
-##                                              lag=15)
+##                                              noise_amp=2,
+##                                              lag=lag)
 ## fname = f'te_stats_lf-coh-plus-noise-lag.png'
 
 ## # Two signals with LF coherence and independent PAC
@@ -1033,32 +1037,53 @@ fname = f'te_stats_phase-dep-comm.png'
 ##                                            sim_params['fs'])
 ## fname = f'te_stats_lf-coh-plus-pac.png'
 
+## # Two signals with LF coherence and HF communication, but no phase-dependence
+## # of the communication
+## t, s_a, s_b = simulate.sim_lf_coh_with_hf_comm(sim_params['dur'],
+##                                                sim_params['fs'],
+##                                                lag=lag,
+##                                                noise_amp=2)
+
+# Split the data into epochs
+epoch_length = 1000 # Samples
+n_splits = len(s_a) / epoch_length
+s_a = np.stack(np.split(s_a, n_splits), axis=1)
+s_b = np.stack(np.split(s_b, n_splits), axis=1)
+
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
                  f_mod=f_mod,
                  f_mod_bw=f_mod_bw,
                  f_car=f_car,
                  f_car_bw=f_car_bw,
-                 lag=[15],
+                 lag=[lag],
                  n_bins=2**3,
                  method='sine psd',
-                 n_perm_phasebin=0, # 1000,
-                 n_perm_shift= 100,
+                 n_perm_phasebin=0, # 1000, ## Works better at identifying real frequencies
+                 n_perm_phasebin_indiv=0, # 1000,
+                 n_perm_signal=0,
+                 n_perm_shift=3, #100,
                  min_shift=None, max_shift=None,
                  cluster_alpha=0.05,
-                 calc_type=2)
+                 calc_type=2,
+                 diff_method='both', #'PD(AB-BA)',
+                 verbose=True)
 
 ## for k,v in mi_params.items(): globals()[k] = v # FOR DEBUGGING
-## i_fm = 5
-## i_fc = 5
+## i_fm = 0
+## i_fc = 0
 ## fm = f_mod[i_fm]
 ## fm_bw = f_mod_bw[i_fm]
 ## fc = f_car[i_fc]
 ## fc_bw = f_car_bw[i_fc]
 
+
 # Compute transfer entropy
-te, clust_stat_info = comlag.cfc_phaselag_transferentropy(s_a, s_b,
+res, stat_info = comlag.cfc_phaselag_transferentropy(s_a, s_b,
                                                           **mi_params)
+diff_meth = 'PD(AB)-PD(BA)'
+te = res[diff_meth]
+clust_stat_info = stat_info[diff_meth]
 
 # Plots
 
@@ -1078,7 +1103,7 @@ for n_plot, lagged_sig in enumerate('ab'):
     x = te[lagged_sig][i_perm, :, :, 0]
     plt.contourf(f_mod, f_car, x.T)
     cb = plt.colorbar(format='%.2f')
-    cb.ax.set_ylabel('I (bits)')
+    cb.ax.set_ylabel('bits$^2$')
     plt.ylabel('HF freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
     plt.title(f'Lagged: {lagged_sig}')
@@ -1110,138 +1135,106 @@ plt.tight_layout()
 plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
 
+###########################################################################
+# Does lagging one LF signal plus noise result in spurious communication? #
+###########################################################################
+"""
+Test for significant communication across "subjects". Does a lagged signal lead
+to significant spurious communication in the same direction across subjects?
+"""
 
-###### OLD VERSION
 
-# Which frequencies to calculate phase for
-f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
-f_mod_width = f_mod_centers / 8
-f_mod = np.tile(f_mod_width, [2, 1]).T \
-            * np.tile([-1, 1], [len(f_mod_centers), 1]) \
-            + np.tile(f_mod_centers, [2, 1]).T
+# Low-freq 'modulator' frequencies
+f_mod = np.array([10])
+f_mod_bw = np.array([2.5])
 
-# Which frequencies to calculate power for
-f_car = np.arange(20, 100, 10)
+# High-freq 'carrier' frequencies
+f_car = np.array([80])
+f_car_bw = np.array([20])
 
 # Parameters for the simulated signals
-sim_params = dict(dur=100, fs=1000,
-                  noise_amp=0.01, common_noise_amp=0.0)
+lag = 6 # ms
+sim_params = dict(dur=100,
+                  fs=1000,
+                  gamma_lag_a_to_b=(lag / 1000))
 
 # Parameters for the MI phase-lag analysis
 mi_params = dict(fs=sim_params['fs'],
-                 f_mod=f_mod, f_car=f_car,
-                 f_car_bw=20, n_bins=2**4,
-                 method='sine psd')
-#for k,v in mi_params.items(): globals()[k] = v # FOR TESTING
-#i_fm = 9
-#i_fc = 5
-#fm = f_mod[i_fm]
-#fc = f_car[i_fc]
+                 f_mod=f_mod,
+                 f_mod_bw=f_mod_bw,
+                 f_car=f_car,
+                 f_car_bw=f_car_bw,
+                 lag=[lag],
+                 n_bins=2**3,
+                 method='sine psd',
+                 n_perm_phasebin=0,
+                 n_perm_shift= 0,
+                 min_shift=None, max_shift=None,
+                 cluster_alpha=0.05,
+                 calc_type=2,
+                 verbose=False)
 
-# Simulate signals
-t, s_a_orig, s_b_orig = simulate.sim(**sim_params)
+# Determine which type of simulation to run
+sim_opts = ['phase-dep-comm',
+            'volume-cond-plus-noise',
+            'lf-coh-plus-noise',
+            'lf-coh-plus-pac']
+n_sim = 100
+plt.clf()
+for n_plot, sim_type in enumerate(sim_opts):
+    te_a = []
+    te_b = []
+    te_d = []
+    for k in tqdm(range(n_sim)):
 
-lag = 15
-L = lambda x: np.roll(x, lag)
-cross_talk_levels = [0, 0.1, 0.2, 0.3] #np.linspace(0, 0.6, num=7)
+        if sim_type == 'phase-dep-comm':
+            t, s_a, s_b = simulate.sim(**sim_params)
+        elif sim_type == 'volume-cond-plus-noise':
+            t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+                                                         sim_params['fs'],
+                                                         noise_amp=2)
+        elif sim_type == 'lf-coh-plus-noise':
+            t, s_a, s_b = simulate.sim_lf_coh_plus_noise(sim_params['dur'],
+                                                         sim_params['fs'],
+                                                         noise_amp=2,
+                                                         lag=mi_params['lag'])
+        elif sim_type == 'lf-coh-plus-pac':
+            t, s_a, s_b = simulate.sim_lf_coh_with_pac(sim_params['dur'],
+                                                       sim_params['fs'],
+                                                       lag=mi_params['lag'])
+    
+        te = comlag.cfc_phaselag_transferentropy(s_a, s_b, **mi_params)
+        te_a.append(np.squeeze(te['a']))
+        te_b.append(np.squeeze(te['b']))
+        te_d.append(np.squeeze(te['diff']))
 
-# # Varying the BW of the HF filter changes the spread of the activity, but in
-# # all cases the blob of activity is centered on the lower edge of the
-# # communication frequencies in the presence of cross-talk
-# f_car_bw_levels = (5, 10, 20)
-
-# # Varying the number of LF phase-difference bins
-# # Small numbers of bins are noisy. Larger numbers look good.
-# n_bins_levels = 2 ** np.arange(2, 5)
-
-# Varying the width of the LF BP filters
-# Ratios of 8 work well. 4 and 16 are messy.
-f_mod_centers = np.logspace(np.log10(4), np.log10(20), 15)
-f_mod_width_ratio_levels = [4, 8, 16]
-
-
-for leakage in cross_talk_levels:
-
-    # Mix the signals together
-    s_a = s_a_orig + (s_b_orig * leakage)
-    s_b = (s_a_orig * leakage) + s_b_orig
-
-    for f_mod_width_ratio in f_mod_width_ratio_levels:
-
-        # Which frequencies to calculate phase for
-        f_mod_width = f_mod_centers / f_mod_width_ratio
-        f_mod = np.tile(f_mod_width, [2, 1]).T \
-                    * np.tile([-1, 1], [len(f_mod_centers), 1]) \
-                    + np.tile(f_mod_centers, [2, 1]).T
-        mi_params['f_mod'] = f_mod
-
-        # # Get lagged conditional mutual information
-        # cmi_full = comlag.cfc_phaselag_transferentropy(s_a, s_b,
-        #                                             cmi_lag=[lag],
-        #                                             calc_type=1,
-        #                                             **mi_params)
-        # # Get the difference in MI between conditioning on past A vs past B
-        # cmi = {'a': cmi_full[:, :, 0, 0],
-        #     'b': cmi_full[:, :, 0, 1]}
-        # cmi['diff'] = cmi['a'] - cmi['b']
-
-        ## Get lagged mutual information
-        #_, mi_lag_a, _ = comlag.cfc_phaselag_mutualinfo(L(s_a), s_b, **mi_params)
-        #_, mi_lag_b, _ = comlag.cfc_phaselag_mutualinfo(s_a, L(s_b), **mi_params)
-        ## Get the diff in MI between lagging A and lagging B
-        #mi = {'a': mi_lag_a,
-        #    'b': mi_lag_b,
-        #    'diff': mi_lag_a - mi_lag_b}
-        
-        # Run something like transfer entropy
-        te_full = comlag.cfc_phaselag_transferentropy(s_a, s_b,
-                                                    cmi_lag=[lag],
-                                                    calc_type=2,
-                                                    **mi_params)
-        # Get the difference in MI between conditioning on past A vs past B
-        te = {'a': te_full[:, :, 0, 0],
-            'b': te_full[:, :, 0, 1]}
-        te['diff'] = te['a'] - te['b']
-        
-        # Put all the measures together
-        d = {
-             #'cmi': cmi,
-             #'mi': mi,
-             'te': te}
-
-        for measure in d.keys():
-            # Plot it
-            plt.figure(figsize=(9, 3))
-            for n_plot, lagged_sig in enumerate('ab'):
-                plt.subplot(1, 3, 1 + n_plot)
-                x = d[measure][lagged_sig]
-                plt.contourf(f_mod_centers, f_car, x.T)
-                cb = plt.colorbar(format='%.2f')
-                cb.ax.set_ylabel('I (bits)')
-                plt.ylabel('HF freq (Hz)')
-                plt.xlabel('Phase freq (Hz)')
-                plt.title(f'Lagged: {lagged_sig}')
-
-            plt.subplot(1, 3, 3)
-            x = d[measure]['diff']
-            levels = np.linspace(*np.array([-1, 1]) * np.max(np.abs(x)), 50)
-            plt.contourf(f_mod_centers, f_car, x.T,
-                        levels=levels,
-                        cmap=plt.cm.RdBu_r)
-            cb = plt.colorbar(format='%.2f')
-            cb.ax.set_ylabel('Diff (bits)')
-            plt.ylabel('HF freq (Hz)')
-            plt.xlabel('Phase freq (Hz)')
-            plt.title(f'Diff (Leakage: {leakage:.1f})')
-            plt.tight_layout()
-
-            fname_stem = 'mi_comod_cross-talk'
-            #fname = f'{fname_stem}_{measure}_leak_{leakage:.1f}.png'
-            fname = f'{fname_stem}_{measure}_leak_{leakage:.1f}_lf-width_{f_mod_width_ratio}.png'
-            plt.savefig(f'{plot_dir}{fname}', dpi=300)
-
-        plt.close('all')
-
-!notify-send 'Analyses finished'
+    plt.subplot(2, 2, n_plot + 1)
+    min_te = np.min(np.array([te_a, te_b]))
+    max_te = np.max(np.array([te_a, te_b]))
+    plt.loglog(te_a, te_b, 'o', alpha=0.5)
+    plt.plot([min_te, max_te], [min_te, max_te], '--k')
+    plt.title(f"{sim_type}; p = {stats.wilcoxon(te_a, te_b).pvalue:.2f}")
+    plt.xlabel('TE(A$\\rightarrow$B)')
+    plt.ylabel('TE(B$\\rightarrow$A)')
+plt.tight_layout()
+plt.savefig(f"{plot_dir}stats/subject-wise_by_simulation_type.png", dpi=300)
 
 
+n = 7 # Subjects
+k = 1000
+mean_diffs = np.linspace(0, 3, 20) # Difference between means (in units of SD)
+p = []
+for d in mean_diffs:
+    pvals = []
+    for _ in range(k):
+        x = np.random.normal(size=n)
+        y = np.random.normal(size=n) + d
+        pvals.append(stats.wilcoxon(x, y).pvalue)
+    pvals = np.array(pvals)
+    p.append(np.mean(pvals < .05))
+
+plt.clf()
+plt.plot(mean_diffs, p)
+plt.xlabel('$\mu_x - \mu_y$ (in $\sigma$)')
+plt.ylabel('Prop(Signif)')
+plt.ylim(0, 1)
