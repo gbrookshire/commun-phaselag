@@ -24,6 +24,7 @@ from scipy import signal, stats
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import re
+import glob
 import os
 from joblib import Parallel, delayed
 import datetime
@@ -724,6 +725,7 @@ for direction in te.keys():
 
 # Load data from the cluster
 timestamp = '2021-04-08-1033'
+timestamp = '2021-05-25-*'  # Phase-bin flipping
 p_thresh = 0.05
 cmaps = {'PD(AB)-PD(BA)': plt.cm.RdBu_r,
          'PD(AB-BA)': plt.cm.plasma}
@@ -802,6 +804,7 @@ timestamp = '2021-04-09-1537'
 timestamp = '2021-04-09-1608'
 timestamp = '2021-04-09-1648'  # 2/17 w/ downsampling
 timestamp = '2021-04-09-1656'  # 2/17 w/out downsampling
+timestamp = '2021-05-25-*'  # Phase-bin flipping
 diff_type = 'PD(AB)-PD(BA)'
 perm_type = 'None'
 for direction in 'ab':
@@ -1713,3 +1716,99 @@ for i_direc, direc in enumerate(directions):
 plt.tight_layout()
 n_bins = mi_params['n_bins']
 plt.savefig(f'{plot_dir}te/flip_phase_bins_nbins{n_bins}.png')
+
+# Plot the clusters from phase-bin flipping
+timestamp = '2021-05-25'  # Phase-bin flipping
+perm_type = 'phasebin_flip'
+lf_ratio = 2.0
+hf_ratio = 3.0
+fn_pattern = \
+    'te_{timestamp}-*_rat{i_rat}_lfratio-{lf_ratio}_hfratio-{hf_ratio}.npz'
+p_thresh = 0.10
+cmaps = {'PD(AB)-PD(BA)': plt.cm.RdBu_r,
+         'PD(AB-BA)': plt.cm.plasma}
+contour_color = {'PD(AB)-PD(BA)': 'black',
+                 'PD(AB-BA)': 'white'}
+te_all = []
+mi_params_all = []
+lag_sec_all = []
+for diff_type in ('PD(AB)-PD(BA)', 'PD(AB-BA)'):
+    plt.figure(figsize=(8, 5))
+    for i_rat in range(len(fnames)):
+        fn_glob = fn_pattern.format(timestamp=timestamp,
+                                    i_rat=i_rat,
+                                    lf_ratio=lf_ratio,
+                                    hf_ratio=hf_ratio)
+        fname_matches = glob.glob(f"{data_dir}te/{fn_glob}")
+        assert len(fname_matches) == 1, \
+            f'Did not find one matching file: {fname_matches}'
+        fn = fname_matches[0]
+        saved_data = np.load(fn, allow_pickle=True)
+        te_full, mi_by_bin, clust_info = saved_data.get('te')
+        mi_params = saved_data.get('mi_params').item()
+        lag_sec = saved_data.get('lag_sec')
+        if i_rat == 0:
+            print(mi_params)
+
+        te = te_full[diff_type]
+
+        x = te['diff'][0, :, :, 0]  # Plot the empirical data for the first lag
+
+        plt.subplot(3, 3, i_rat + 1)
+
+        maxabs = np.max(np.abs(x))
+        if diff_type == 'PD(AB)-PD(BA)':
+            levels = np.linspace(-maxabs, maxabs, 50)
+            cb_ticks = [-maxabs, 0, maxabs]
+            vmin = -maxabs
+        elif diff_type == 'PD(AB-BA)':
+            levels = np.linspace(0, maxabs, 50)
+            cb_ticks = [0, maxabs]
+            vmin = 0
+
+        plt.imshow(x.T,
+                   origin="lower",
+                   interpolation="none",
+                   aspect='auto',
+                   vmin=vmin, vmax=maxabs,
+                   cmap=cmaps[diff_type])
+        ytick_spacing = 4
+        xtick_spacing = 4
+        plt.yticks(range(len(mi_params['f_car']))[::ytick_spacing],
+                   mi_params['f_car'][::ytick_spacing])
+        plt.xticks(range(len(mi_params['f_mod']))[::xtick_spacing],
+                   mi_params['f_mod'][::xtick_spacing])
+        plt.xlabel('LF freq (Hz)')
+        plt.ylabel('HF freq (Hz)')
+
+        # plt.contourf(mi_params['f_mod'],
+        #              mi_params['f_car'],
+        #              x.T,
+        #              levels=levels,
+        #              cmap=cmaps[diff_type])
+        cb = plt.colorbar(format='%.2e')
+        # Plot significant clusters
+        cl_info = clust_info[diff_type]
+        clust_labels = cl_info['labels'][:, :, 0].astype(int)
+        signif_clusters = np.nonzero(
+            np.array(cl_info['stats']) > cl_info['cluster_thresh'])
+        clust_highlight = np.isin(clust_labels,
+                                  1 + signif_clusters[0]).astype(int)
+        thresh = np.percentile(cl_info['max_per_perm'],
+                               [(1 - p_thresh) * 100])
+        for i_clust in np.unique(clust_labels):
+            if i_clust == 0:
+                continue
+            elif cl_info['stats'][i_clust-1] > thresh:
+                plt.contour(np.arange(len(mi_params['f_mod'])),
+                            np.arange(len(mi_params['f_car'])),
+                            (clust_labels == i_clust).T,
+                            levels=[0.5],
+                            colors=contour_color[diff_type])
+        cb.set_ticks(cb_ticks)
+        cb.ax.set_ylabel('bits $^2$')
+        plt.ylabel('HF freq (Hz)')
+        plt.xlabel('Phase freq (Hz)')
+        plt.title(f'p = {cl_info["pval"]:.3f}')
+    plt.tight_layout()
+    plt.savefig(f'{plot_dir}te/{timestamp}_{diff_type}_{perm_type}.png')
