@@ -859,6 +859,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  cluster_alpha=0.05,
                                  method='sine psd', calc_type=2,
                                  diff_method='both',
+                                 min_cluster_size=1,
                                  return_phase_bins=False,
                                  verbose=True):
     """
@@ -948,6 +949,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
             I(A;B|LA) and I(A;B|LB)
         2: Transfer entropy
             I(LA;B|LB) and I(A;LB|LA)
+    min_cluster_size : int
+        The minimum number of samples ("pixels") that a cluster can have to be
+        included in the analysis.
     return_phase_bins : bool
         If true, return the TE values for each individual phase bin.
     diff_method : str
@@ -1033,6 +1037,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
     assert diff_method in ('PD(AB)-PD(BA)', 'PD(AB-BA)', 'both'), \
         'diff_method "{diff_method}" not recognized'
+
+    assert isinstance(min_cluster_size, int), 'min_cluster_size must be an int'
+    assert min_cluster_size > 0, 'min_cluster_size must be a positive integer'
 
     # Initialize mutual information array
     # Dims: Permutation, LF freq, HF freq, CMI lag, direction, LF phase bin
@@ -1270,7 +1277,11 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                     # Select the z-values in the cluster
                     x = z_mi_comod[i_perm, :, :, i_lag]
                     x = x[labels == i_clust]
-                    s = stat_fun(x)
+                    # Only keep clusters greater than the threshold size
+                    if x.size < min_cluster_size:
+                        s = 0
+                    else:
+                        s = stat_fun(x)
                     perm_cluster_stat.append(s)
                 cluster_stats.append(perm_cluster_stat)
 
