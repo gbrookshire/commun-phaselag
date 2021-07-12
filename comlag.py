@@ -861,6 +861,7 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
                                  diff_method='both',
                                  min_cluster_size=1,
                                  return_phase_bins=False,
+                                 ignore_corner=False,
                                  verbose=True):
     """
     Compute conditional mutual information between two signals, and lagged
@@ -959,6 +960,9 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
         'PD(AB)-PD(BA)': PhaseDep(TE(A-->B)) - PhaseDep(TE(B-->A))
         'PD(AB-BA)': PhaseDep( TE(A-->B) - TE(B-->A) )
         'both': Calculate the difference using both of the methods above
+    ignore_corner : bool
+        If True, restrict the values that are included in the cluster
+        permutation test. Only includes samples for which HF > 2 * LF.
     """
 
     phase_bins = np.linspace(-np.pi, np.pi, n_bins + 1)
@@ -1259,6 +1263,13 @@ def cfc_phaselag_transferentropy(s_a, s_b, fs,
 
             # Cluster statistic: Summed absolute z-score
             z_mi_comod = stats.zscore(mi_comod['diff'], axis=None)
+
+            # Only keep frequencies for which f_car > 2 * f_mod
+            if ignore_corner:
+                for i_fm, fm in enumerate(f_mod):
+                    for i_fc, fc in enumerate(f_car):
+                        if fc < (2 * fm):
+                            thresh_mi_comod[:, i_fm, i_fc, ...] = 0
 
             def stat_fun(x):
                 return np.sum(np.abs(x))
