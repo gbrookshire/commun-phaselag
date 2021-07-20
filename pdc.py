@@ -226,7 +226,7 @@ def pdc(s_a, s_b, fs,
     # Initialize array to hold the number of observations in each bin
     counts = np.full([len(lf_centers), n_bins], np.nan)
 
-    for i_lf in tqdm(range(len(lf_centers)), desc='LF'):
+    for i_lf in tqdm(range(len(lf_centers)), desc='LF', leave=False):
         # Compute the LF phase-difference of each signal
         lf_c = lf_centers[i_lf]
         lf_bw = lf_bandwidth[i_lf]
