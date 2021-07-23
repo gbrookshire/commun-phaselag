@@ -1,2 +1,3 @@
 # commun-phaselag
-Look for a measure of high-gamma communication between brain areas as a function of LF phase
+
+Quantify the degree to which high-frequency communication depends on the low-frequency phase difference.
