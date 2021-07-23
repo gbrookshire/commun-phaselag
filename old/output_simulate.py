@@ -18,6 +18,8 @@ from tqdm import tqdm
 
 import simulate
 import comlag
+from comlag import *
+from comlag import _wavelet_tfr, _buffer, _match_dims
 
 plt.ion()
 
@@ -96,14 +98,14 @@ mi = comlag.cfc_phasediff_tort(s_a, s_b, fs, f_mod, f_car)
 plt.subplot(2, 3, 5)
 plt.contourf(np.mean(f_mod, axis=1), f_car, mi['a'])
 plt.xlabel('Phase-diff freq (Hz)')
-#plt.ylabel('Amp freq (Hz)')
+# plt.ylabel('Amp freq (Hz)')
 plt.title('CFC: phase-diff to $s_a$')
 plt.colorbar()
 
 plt.subplot(2, 3, 6)
 plt.contourf(np.mean(f_mod, axis=1), f_car, mi['b'])
 plt.xlabel('Phase-diff freq (Hz)')
-#plt.ylabel('Amp freq (Hz)')
+# plt.ylabel('Amp freq (Hz)')
 plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
 
@@ -167,7 +169,7 @@ nfft = 2 ** 10
 xlim = [0, 40]
 mi, f_mod = comlag.cfc_xspect(s_a, s_a, fs, nfft, nfft / 2, f_car)
 plt.subplot(2, 3, 4)
-plt.contourf(f_mod, f_car, mi[:,:,0].T)
+plt.contourf(f_mod, f_car, mi[:, :, 0].T)
 plt.xlabel('Phase freq (Hz)')
 plt.ylabel('Amp freq (Hz)')
 plt.xlim(xlim)
@@ -177,17 +179,17 @@ plt.colorbar()
 # CFC from LF phase-diff between A and B to HG amp in B
 mi, f_mod = comlag.cfc_phasediff_xspect(s_a, s_b, fs, nfft, nfft / 2, f_car)
 plt.subplot(2, 3, 5)
-plt.contourf(f_mod, f_car, mi['a'][:,:,0].T)
+plt.contourf(f_mod, f_car, mi['a'][:, :, 0].T)
 plt.xlabel('Phase-diff freq (Hz)')
-#plt.ylabel('Amp freq (Hz)')
+# plt.ylabel('Amp freq (Hz)')
 plt.xlim(xlim)
 plt.title('CFC: phase-diff to $s_a$')
 plt.colorbar()
 
 plt.subplot(2, 3, 6)
-plt.contourf(f_mod, f_car, mi['b'][:,:,0].T)
+plt.contourf(f_mod, f_car, mi['b'][:, :, 0].T)
 plt.xlabel('Phase-diff freq (Hz)')
-#plt.ylabel('Amp freq (Hz)')
+# plt.ylabel('Amp freq (Hz)')
 plt.xlim(xlim)
 plt.title('CFC: phase-diff to $s_b$')
 plt.colorbar()
@@ -202,12 +204,14 @@ plt.savefig(f'{plot_dir}xspect.png')
 
 fits, rsq = comlag.cfc_vonmises_2d(s_a, s_b, fs, f_mod, f_car)
 
+
 def plot_contour(x, colorbar_label='', **kwargs):
     plt.contourf(f_mod_centers, f_car, x.T, **kwargs)
     cb = plt.colorbar(format='%.2f', ticks=[x.min(), x.max()])
     cb.ax.set_ylabel(colorbar_label)
     plt.ylabel('Amp freq (Hz)')
     plt.xlabel('Phase freq (Hz)')
+
 
 plt.clf()
 
@@ -240,15 +244,13 @@ plt.savefig(f'{plot_dir}phase-diff_mutual-info.png')
 
 
 ##########################
-###### Sketchpad #########
+#      Sketchpad         #
 ##########################
 
 #######################################################
 # 1) HF power in region 2 as a function of phase diff #
 #######################################################
 
-from comlag import *
-from comlag import _wavelet_tfr, _buffer, _match_dims
 
 f_mod = [[7, 14]]
 f_car = [90]
@@ -279,12 +281,14 @@ gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
 # On first glance, it looks pretty good.
 # Compute the phase difference
 phase_diff = phase['a'] - phase['b']
-phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi # wrap to +/-pi
-phase_diff = np.digitize(phase_diff, phase_bins) - 1 # Binned
+phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi  # wrap to +/-pi
+phase_diff = np.digitize(phase_diff, phase_bins) - 1  # Binned
 # Average HF amplitude per LF phase bin
-amplitude_dist = np.ones(n_bins) # default is 1 to avoid log(0)
+amplitude_dist = np.ones(n_bins)  # default is 1 to avoid log(0)
 for phase_bin in np.unique(phase_diff):
-    amplitude_dist[phase_bin] = np.mean(amp['b'][phase_diff == phase_bin, i_fc])
+    amplitude_dist[phase_bin] = np.mean(
+            amp['b'][phase_diff == phase_bin, i_fc]
+            )
 # Plot the result
 ax0 = plt.subplot(gs[0])
 plt.plot(phase_bins[:-1], amplitude_dist)
@@ -297,18 +301,18 @@ plt.ylabel('HF power')
 # that it's not phase-difference per se that determines HF power -- if it were,
 # HF power would follow a downward diagonal line. Instead, HF power depends on
 # a specific combination of LF phase in each signal.
-phase_dig = {} # Digitize the phase into bins
+phase_dig = {}  # Digitize the phase into bins
 for sig in 'ab':
     phase_dig[sig] = np.digitize(phase[sig], phase_bins) - 1
-amplitude_dist = np.ones([n_bins, n_bins]) # default is 1 to avoid log(0)
+amplitude_dist = np.ones([n_bins, n_bins])  # default is 1 to avoid log(0)
 for bin_a in np.unique(phase_diff):
     for bin_b in np.unique(phase_diff):
         phase_sel = (phase_dig['a'] == bin_a) & (phase_dig['b'] == bin_b)
         amplitude_dist[bin_a, bin_b] = np.mean(amp['b'][phase_sel, i_fc])
 ax1 = plt.subplot(gs[1])
 # Mirror the results for -pi at +pi to make the plot prettier
-amp_dist = np.c_[amplitude_dist, amplitude_dist[:,:1]]
-amp_dist = np.r_[amp_dist, amp_dist[:1,:]]
+amp_dist = np.c_[amplitude_dist, amplitude_dist[:, :1]]
+amp_dist = np.r_[amp_dist, amp_dist[:1, :]]
 plt.contourf(phase_bins, phase_bins, amp_dist,
              levels=np.linspace(0, amp_dist.max(), 100))
 plt.xticks([-np.pi, 0, np.pi], ['$-\\pi$', '0', '$\\pi$'])
@@ -327,7 +331,6 @@ plt.savefig(f'{plot_dir}phase-diff_HFPower.png', dpi=300)
 ######################################################################
 
 # I'm not actually sure how to do this
-
 
 
 ####################################################################

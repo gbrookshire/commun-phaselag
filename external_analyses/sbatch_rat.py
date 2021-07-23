@@ -28,6 +28,7 @@ from scipy import signal
 import comlag
 
 now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
+print('Timestamp:', now)
 
 # base_data_dir = '../'  # Bluebear
 base_data_dir = '/media/geoff/Seagate2TB1/geoff/commun-phaselag/'  # Desktop
@@ -41,20 +42,30 @@ fnames = ['EEG_speed_allData_Rat17_20120616_begin1.mat',
           'EEG_speed_allData_Rat47_20140923_begin1_CA3_CSC11_CA1_TT3.mat',
           'EEG_speed_allData_Rat31_20140110_begin1_CA3_CSC7_CA1_TT2.mat']
 
-f_bw_ratios = np.arange(1.5, 6.1, 0.5)  # From ~2 to ~10 cycles
-f_mod = np.arange(4, 16)  # Centers of the LF filters (Hz)
-f_car = np.arange(30, 150, 5)  # Centers of the HF filters (Hz)
-downsamp_factor = 5  # Factor by which to downsample the data
-epoch_dur = 5.0  # in seconds
+# # Parameters from 5/28
+# f_bw_ratios = np.arange(1.5, 6.1, 0.5)  # From ~2 to ~10 cycles
+# f_mod = np.arange(4, 16)  # Centers of the LF filters (Hz)
+# f_car = np.arange(30, 150, 5)  # Centers of the HF filters (Hz)
+# downsamp_factor = 5  # Factor by which to downsample the data
+# epoch_dur = 5.0  # in seconds
+# n_bins = 10
+
+# Parameters from 2/17
+# f_mod = np.logspace(np.log10(4), np.log10(20), 15)  # Original
+f_mod = np.arange(4, 21)
+f_mod_ratio = 4
+f_car = np.arange(20, 150, 10)
+f_car_ratio = 4
+n_bins = 10  # Originally 2**4, but that doesn't work for phase-bin flip perm
+downsamp_factor = 5
 
 # Parameters for the MI phase-lag analysis
-k_perm = 0
 lag_sec = 0.006
 mi_params = dict(f_mod=f_mod,
                  f_mod_bw=None,
                  f_car=f_car,
                  f_car_bw=None,
-                 n_bins=10,  # 2**3,
+                 n_bins=n_bins,
                  decimate=None,
                  n_perm_phasebin=0,
                  n_perm_phasebin_indiv=0,
@@ -66,7 +77,9 @@ mi_params = dict(f_mod=f_mod,
                  diff_method='both',
                  calc_type=2,
                  method='sine psd',
+                 min_cluster_size=2,
                  return_phase_bins=True,
+                 ignore_corner=True,
                  verbose=True)
 
 
