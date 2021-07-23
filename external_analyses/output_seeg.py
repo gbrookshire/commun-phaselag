@@ -504,7 +504,7 @@ chan_combos = list(itertools.product(np.nonzero(picks_hipp)[0],
 fits = []
 rsq = []
 for chan_1, chan_2 in tqdm(chan_combos):
-    print chan1, chan2
+    print(chan1, chan2)
     fits_i, rsq_i = comlag.cfc_vonmises_2d(x[:, chan_1, :].T,
                                            x[:, chan_2, :].T,
                                            epochs.info['sfreq'],

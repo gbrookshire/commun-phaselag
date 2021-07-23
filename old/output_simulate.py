@@ -899,7 +899,7 @@ for leakage in cross_talk_levels:
         fname = f'{fname_stem}_{method}_leak_{leakage:.1f}.png'
         plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
-!notify-send 'Analyses finished'
+# !notify-send 'Analyses finished'
 
 
 #############################################
@@ -957,7 +957,7 @@ for leakage in cross_talk_levels:
     fname = f'{fname_stem}_psi_leak_{leakage:.1f}.png'
     plt.savefig(f'{plot_dir}{fname}', dpi=300)
 
-!notify-send 'Analyses finished'
+# !notify-send 'Analyses finished'
 
 # # Plots for testing
 # plt.clf()
