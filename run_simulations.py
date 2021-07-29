@@ -28,16 +28,16 @@ sim_params = dict(dur=500,
                   fs=400,
                   noise_amp=1.5)
 lag = 6
+lag_seconds = lag / sim_params['fs']
 n_subjects = 1
 
 sim_funcs = {
-        'phase_dep_comm': lambda: simulate.sim(**sim_params),
-        # 'lf_coh': lambda: simulate.sim_lf_coh_plus_noise(
+        'phase_dep_comm': lambda: simulate.sim(**sim_params,
+                                               gamma_lag_a_to_b=lag_seconds),
+        # 'lf_coh_plus_pac': lambda: simulate.sim_lf_coh_with_pac(
         #     **sim_params, lag=lag),
-        'lf_coh_plus_pac': lambda: simulate.sim_lf_coh_with_pac(
-            **sim_params, lag=lag),
-        'lf_coh_plus_hf_comm': lambda: simulate.sim_lf_coh_with_hf_comm(
-            **sim_params, lag=lag)
+        # 'lf_coh_plus_hf_comm': lambda: simulate.sim_lf_coh_with_hf_comm(
+        #     **sim_params, lag=lag)
         }
 
 # Parameters for the MI phase-lag analysis
